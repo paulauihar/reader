@@ -1,5 +1,5 @@
 // Главный модуль: экраны, навигация, синхронизация с Google Диском, обложки.
-import { state, load, save, persist, setSetting, subscribe, allTags, itemsWithTag, exportSyncData, mergeSyncData, annotationsOf, liveCollections, putCollection, uid, isFavorite, setFavorite, seedShelves, liveShelves, addShelf, renameShelf, deleteShelf, shelvesOf, setBookShelves, booksOnShelf } from './store.js';
+import { state, load, save, persist, setSetting, subscribe, allTags, itemsWithTag, exportSyncData, mergeSyncData, annotationsOf, liveCollections, putCollection, uid, isFavorite, setFavorite, seedShelves, liveShelves, addShelf, renameShelf, deleteShelf, shelvesOf, setBookShelves, booksOnShelf, applyMeta, applyAllMeta, setBookMeta } from './store.js';
 import { db, requestPersistence } from './db.js';
 import * as drive from './drive.js';
 import { openBook, bookInfo, resizeImage } from './formats.js';
@@ -16,10 +16,11 @@ let syncing = false;
 async function start() {
   await load();
   seedShelves();
+  applyAllMeta();
   document.documentElement.dataset.theme = state.settings.theme;
   requestPersistence();
   window.addEventListener('hashchange', () => { navDepth++; route(); });
-  subscribe((what) => { if (what === 'annotations' || what === 'progress' || what === 'favorites') scheduleNotesSync(); });
+  subscribe((what) => { if (['annotations', 'progress', 'favorites', 'shelves', 'bookmeta'].includes(what)) scheduleNotesSync(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { reader && reader.savePosition(); persist(); if (state.dirty) syncNotes().catch(() => {}); }
   });
@@ -101,6 +102,7 @@ async function runCoverQueue() {
       b.coverTried = true;
       if (info.title && info.title.length > 1) b.title = info.title;
       if (info.author) b.author = info.author;
+      applyMeta(b);
       if (info.cover) {
         await db.set('covers', id, info.cover);
         coverUrls.delete(id);
@@ -392,6 +394,7 @@ async function openReader(id, annId) {
       if (!meta.coverTried) queueCovers([id]);
       if (book.title && (meta.title === drive.cleanTitle(meta.fileName || '') || !meta.title)) meta.title = book.title;
       if (book.author && !meta.author) meta.author = book.author;
+      applyMeta(meta);
       state.lastOpened = id;
     },
   });
@@ -492,6 +495,7 @@ export async function syncAll({ interactive = false } = {}) {
         db.del('files', b.id).catch(() => {}); db.del('covers', b.id).catch(() => {});
       }
     }
+    applyAllMeta();
     save('books', { sync: false });
     await syncNotes(true);
     toast(`Синхронизировано: ${found.length} ${plural(found.length, 'книга', 'книги', 'книг')}`);
@@ -519,6 +523,7 @@ async function syncNotes(force = false) {
     state.dirty = false;
     state.lastSync = Date.now();
     await persist();
+    if (changed) applyAllMeta();
     if (changed && reader) reader.refreshAnnotations();
     republishOwnerNotes().catch(e => console.warn(e));
     $$('[data-sync]').forEach(b => b.classList.remove('pending'));
@@ -760,6 +765,7 @@ async function ensureCoverBlob(id) {
   b.coverTried = true;
   if (info.title && info.title.length > 1) b.title = info.title;
   if (info.author) b.author = info.author;
+  applyMeta(b);
   if (info.cover) { await db.set('covers', id, info.cover); coverUrls.delete(id); }
   return info.cover || null;
 }
@@ -1058,6 +1064,8 @@ function openBookMenu(b, rerender) {
   const row = (shf, isSub) => `<label class="pick ${isSub ? 'is-sub' : ''}"><input type="checkbox" value="${esc(shf.id)}" ${selected.has(shf.id) ? 'checked' : ''}><span>${esc(shf.name)}</span></label>`;
   const sh = sheet(`
     <h3>${esc(b.title)}</h3>
+    ${b.author ? `<p class="menu-author">${esc(b.author)}</p>` : ''}
+    <button class="link-btn" id="edmeta">${ico('edit')} Изменить название и автора</button>
     <div class="lbl">Полки <b id="shcnt">${selected.size}</b></div>
     <div class="search"><span>${ico('search')}</span><input type="search" id="shq" placeholder="Найти полку"></div>
     <div class="pick-list shelf-pick">${liveShelves().map(p => row(p, false) + liveShelves(p.id).map(c => row(c, true)).join('')).join('')}</div>
@@ -1072,6 +1080,7 @@ function openBookMenu(b, rerender) {
   $('#shq', sh.el).oninput = (e) => { const q = e.target.value.trim().toLowerCase(); $$('.pick', list).forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); }); };
   const saveSel = () => { setBookShelves(b.id, [...selected]); };
   $('#shsave', sh.el).onclick = () => { saveSel(); sh.close(); toast(selected.size ? `Полок: ${selected.size}` : 'Книга убрана со всех полок'); rerender && rerender(); };
+  $('#edmeta', sh.el).onclick = () => { saveSel(); sh.close(); openMetaEditor(b, rerender); };
   $('#shnew', sh.el).onclick = () => { saveSel(); sh.close(); openShelfNameSheet(null, null, () => openBookMenu(b, rerender)); };
   const mv = $('#mv', sh.el);
   if (mv) mv.onclick = () => { saveSel(); sh.close(); openMoveSheet(b, rerender); };
@@ -1082,6 +1091,21 @@ function openBookMenu(b, rerender) {
     delete state.books[b.id];
     await db.del('files', b.id); await db.del('covers', b.id);
     save('books', { sync: false }); rerender && rerender();
+  };
+}
+
+function openMetaEditor(b, rerender) {
+  const sh = sheet(`
+    <h3>Название и автор</h3>
+    <label class="field"><span>Название</span><textarea id="mtitle" rows="2">${esc(b.title)}</textarea></label>
+    <label class="field"><span>Автор</span><input id="mauthor" value="${esc(b.author || '')}" placeholder="Имя автора"></label>
+    <p class="muted">Файл на Диске не переименовывается — меняется только то, как книга подписана в читалке.</p>
+    <div class="sheet-actions"><button class="btn ghost" data-close>Отмена</button><button class="btn primary" id="msave">Сохранить</button></div>`);
+  $('#msave', sh.el).onclick = () => {
+    const t = $('#mtitle', sh.el).value.trim().replace(/\s+/g, ' ');
+    if (!t) { toast('Название не может быть пустым'); return; }
+    setBookMeta(b.id, t, $('#mauthor', sh.el).value.trim());
+    sh.close(); toast('Сохранено'); rerender && rerender();
   };
 }
 

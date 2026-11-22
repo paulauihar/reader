@@ -90,8 +90,8 @@ export function excerpt(s, n = 220) { s = (s || '').replace(/\s+/g, ' ').trim();
 
 // «Обложка-заглушка» из названия
 export function fallbackCover(title, author, seed = '') {
-  const palettes = [['#18181b', '#fafafa'], ['#4f46e5', '#eef0ff'], ['#0f766e', '#e6fffa'], ['#be123c', '#fff1f2'], ['#334155', '#f1f5f9'], ['#7c3aed', '#f5f3ff'], ['#0369a1', '#f0f9ff']];
-  let hsh = 0; for (const ch of (seed || title)) hsh = (hsh * 31 + ch.charCodeAt(0)) >>> 0;
-  const [bg, fg] = palettes[hsh % palettes.length];
-  return `<div class="fallback-cover" style="background:${bg};color:${fg}"><div class="fc-title">${esc(excerpt(title, 70))}</div>${author ? `<div class="fc-author">${esc(excerpt(author, 40))}</div>` : ''}</div>`;
+  // Минималистичная тёмно-серая обложка: первые два слова названия, без переносов
+  const words = String(title || '').trim().split(/\s+/).filter(Boolean);
+  const short = words.slice(0, 2).join(' ') + (words.length > 2 ? '…' : '');
+  return `<div class="fallback-cover"><div class="fc-inner"><div class="fc-title">${esc(short)}</div></div></div>`;
 }

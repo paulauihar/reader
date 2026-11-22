@@ -11,6 +11,7 @@ export const state = {
   favorites: {},      // bookId -> {on, t} — «Читаю сейчас»
   shelves: {},        // id -> {id, name, parent, order, t, del} — полки (книга может быть на нескольких)
   shelfBooks: {},     // bookId -> {ids: [shelfId…], t}
+  bookMeta: {},       // bookId -> {title, author, t} — название и автор, исправленные вручную
   folders: {},        // id папки -> {id, name, cat, sub} — категории и подкатегории на Диске
   // Синхронизируемые данные
   progress: {},       // bookId -> {pos, pct, t}
@@ -52,7 +53,7 @@ export async function persist() {
   clearTimeout(saveTimer);
   await db.set('kv', 'state', {
     books: state.books, progress: state.progress, annotations: state.annotations,
-    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings, collections: state.collections, folders: state.folders, favorites: state.favorites, shelves: state.shelves, shelfBooks: state.shelfBooks,
+    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings, collections: state.collections, folders: state.folders, favorites: state.favorites, shelves: state.shelves, shelfBooks: state.shelfBooks, bookMeta: state.bookMeta,
     dirty: state.dirty, lastSync: state.lastSync,
   });
 }
@@ -66,6 +67,7 @@ export async function load() {
     state.favorites = saved.favorites || {};
     state.shelves = saved.shelves || {};
     state.shelfBooks = saved.shelfBooks || {};
+    state.bookMeta = saved.bookMeta || {};
     state.settings = Object.assign({}, defaultsSettings(), saved.settings || {});
   }
 }
@@ -148,6 +150,7 @@ export function exportSyncData() {
     favorites: state.favorites,
     shelves: state.shelves,
     shelfBooks: state.shelfBooks,
+    bookMeta: state.bookMeta,
   };
 }
 export function mergeSyncData(remote) {
@@ -164,7 +167,7 @@ export function mergeSyncData(remote) {
   for (const [k, v] of Object.entries(remote.bookTitles || {})) {
     if (!state.bookTitles[k]) { state.bookTitles[k] = v; changed = true; }
   }
-  for (const key of ['shelves', 'shelfBooks']) {
+  for (const key of ['shelves', 'shelfBooks', 'bookMeta']) {
     for (const [k, v] of Object.entries(remote[key] || {})) {
       const l = state[key][k];
       if (!l || (v.t || 0) > (l.t || 0)) { state[key][k] = v; changed = true; }
@@ -224,4 +227,18 @@ export function shelvesOf(bookId) {
 export function setBookShelves(bookId, ids) { state.shelfBooks[bookId] = { ids: [...new Set(ids)], t: now() }; save('shelves'); }
 export function booksOnShelf(shelfId) {
   return Object.keys(state.shelfBooks).filter(bid => shelvesOf(bid).includes(shelfId));
+}
+
+// ---------- Ручные название и автор ----------
+export function applyMeta(b) {
+  const m = b && state.bookMeta[b.id];
+  if (m) { b.title = m.title; b.author = m.author; }
+  return b;
+}
+export function applyAllMeta() { for (const b of Object.values(state.books)) applyMeta(b); }
+export function setBookMeta(id, title, author) {
+  state.bookMeta[id] = { title, author, t: now() };
+  if (state.books[id]) applyMeta(state.books[id]);
+  state.bookTitles[id] = title;
+  save('bookmeta');
 }
