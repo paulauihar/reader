@@ -8,6 +8,7 @@ export const now = () => Date.now();
 export const state = {
   // Библиотека (локальная, пересобирается из Google Диска)
   books: {},          // id -> {id, title, author, format, category, sub, parentId, driveId, modifiedTime, size, source}
+  favorites: {},      // bookId -> {on, t} — «Читаю сейчас»
   folders: {},        // id папки -> {id, name, cat, sub} — категории и подкатегории на Диске
   // Синхронизируемые данные
   progress: {},       // bookId -> {pos, pct, t}
@@ -49,7 +50,7 @@ export async function persist() {
   clearTimeout(saveTimer);
   await db.set('kv', 'state', {
     books: state.books, progress: state.progress, annotations: state.annotations,
-    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings, collections: state.collections, folders: state.folders,
+    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings, collections: state.collections, folders: state.folders, favorites: state.favorites,
     dirty: state.dirty, lastSync: state.lastSync,
   });
 }
@@ -60,6 +61,7 @@ export async function load() {
     Object.assign(state, saved);
     state.collections = saved.collections || {};
     state.folders = saved.folders || {};
+    state.favorites = saved.favorites || {};
     state.settings = Object.assign({}, defaultsSettings(), saved.settings || {});
   }
 }
@@ -139,6 +141,7 @@ export function exportSyncData() {
     bookTitles: state.bookTitles,
     lastOpened: state.lastOpened,
     collections: state.collections,
+    favorites: state.favorites,
   };
 }
 export function mergeSyncData(remote) {
@@ -155,6 +158,10 @@ export function mergeSyncData(remote) {
   for (const [k, v] of Object.entries(remote.bookTitles || {})) {
     if (!state.bookTitles[k]) { state.bookTitles[k] = v; changed = true; }
   }
+  for (const [k, v] of Object.entries(remote.favorites || {})) {
+    const l = state.favorites[k];
+    if (!l || (v.t || 0) > (l.t || 0)) { state.favorites[k] = v; changed = true; }
+  }
   for (const [k, v] of Object.entries(remote.collections || {})) {
     const l = state.collections[k];
     if (!l || (v.t || 0) > (l.t || 0)) { state.collections[k] = v; changed = true; }
@@ -163,3 +170,6 @@ export function mergeSyncData(remote) {
   if (changed) emit('data');
   return changed;
 }
+
+export function isFavorite(id) { return !!state.favorites[id]?.on; }
+export function setFavorite(id, on) { state.favorites[id] = { on, t: now() }; save('favorites'); }

@@ -90,7 +90,7 @@ export function excerpt(s, n = 220) { s = (s || '').replace(/\s+/g, ' ').trim();
 
 // «Обложка-заглушка» из названия
 export function fallbackCover(title, author, seed = '') {
-  const palettes = [['#5b4636', '#e8d9c0'], ['#2f4858', '#d8e3e7'], ['#5a3d5c', '#eadcea'], ['#33563b', '#dce9d8'], ['#6b2d2d', '#f0dada'], ['#3b3f6b', '#dddff2'], ['#6b5a2d', '#f2ead2']];
+  const palettes = [['#18181b', '#fafafa'], ['#4f46e5', '#eef0ff'], ['#0f766e', '#e6fffa'], ['#be123c', '#fff1f2'], ['#334155', '#f1f5f9'], ['#7c3aed', '#f5f3ff'], ['#0369a1', '#f0f9ff']];
   let hsh = 0; for (const ch of (seed || title)) hsh = (hsh * 31 + ch.charCodeAt(0)) >>> 0;
   const [bg, fg] = palettes[hsh % palettes.length];
   return `<div class="fallback-cover" style="background:${bg};color:${fg}"><div class="fc-title">${esc(excerpt(title, 70))}</div>${author ? `<div class="fc-author">${esc(excerpt(author, 40))}</div>` : ''}</div>`;

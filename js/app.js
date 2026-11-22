@@ -1,5 +1,5 @@
 // Главный модуль: экраны, навигация, синхронизация с Google Диском, обложки.
-import { state, load, save, persist, setSetting, subscribe, allTags, itemsWithTag, exportSyncData, mergeSyncData, annotationsOf, liveCollections, putCollection, uid } from './store.js';
+import { state, load, save, persist, setSetting, subscribe, allTags, itemsWithTag, exportSyncData, mergeSyncData, annotationsOf, liveCollections, putCollection, uid, isFavorite, setFavorite } from './store.js';
 import { db, requestPersistence } from './db.js';
 import * as drive from './drive.js';
 import { openBook, bookInfo, resizeImage } from './formats.js';
@@ -18,7 +18,7 @@ async function start() {
   document.documentElement.dataset.theme = state.settings.theme;
   requestPersistence();
   window.addEventListener('hashchange', () => { navDepth++; route(); });
-  subscribe((what) => { if (what === 'annotations' || what === 'progress') scheduleNotesSync(); });
+  subscribe((what) => { if (what === 'annotations' || what === 'progress' || what === 'favorites') scheduleNotesSync(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { reader && reader.savePosition(); persist(); if (state.dirty) syncNotes().catch(() => {}); }
   });
@@ -149,6 +149,8 @@ function renderHome(tab) {
   const last = state.lastOpened && state.books[state.lastOpened];
   const lastPct = last ? (state.progress[last.id]?.pct ?? 0) : 0;
   const empty = !cats.length;
+  const favs = Object.values(state.books).filter(b => isFavorite(b.id))
+    .sort((a, b) => (state.progress[b.id]?.t || 0) - (state.progress[a.id]?.t || 0));
   app.innerHTML = `
     <div class="screen">
       ${topBar('Библиотека', { right: `${syncBtn()}<button class="icon-btn" data-settings aria-label="Настройки">${ico('gear')}</button>` })}
@@ -165,16 +167,26 @@ function renderHome(tab) {
             <button class="btn primary" data-settings>Подключить Google Диск</button>
             <button class="btn ghost" data-import>Добавить файл с устройства</button>
           </div>` : `
-          ${collectionsSection()}
-          <h2 class="section-title">Категории</h2>
-          <div class="cat-grid">
-            ${cats.map(([name, books]) => {
-              const sample = books.slice().sort((a, b) => (state.progress[b.id]?.t || 0) - (state.progress[a.id]?.t || 0)).slice(0, 3);
-              return `<a class="cat-tile" href="#/cat/${encodeURIComponent(name)}">
-                <div class="cat-stack">${sample.map((b, i) => `<div class="stack-cover s${i}" data-cover="${esc(b.id)}">${fallbackCover(b.title, '', b.id)}</div>`).join('')}</div>
-                <div class="cat-name">${esc(name)}</div><div class="cat-count">${books.length} ${plural(books.length, 'книга', 'книги', 'книг')}</div>
-              </a>`;
-            }).join('')}
+          <div class="home-cols">
+            <aside class="home-side">
+              <h2 class="section-title">Читаю</h2>
+              ${favs.length ? `<div class="fav-list">${favs.map(b => {
+                const pct = state.progress[b.id]?.pct ?? 0;
+                return `<a class="fav-item" href="#/read/${encodeURIComponent(b.id)}">
+                  <div class="fav-cover" data-cover="${esc(b.id)}">${fallbackCover(b.title, '', b.id)}</div>
+                  <div class="fav-info"><div class="fav-title">${esc(b.title)}</div><div class="bar"><i style="width:${pct}%"></i></div></div>
+                </a>`;
+              }).join('')}</div>` : `<p class="fav-empty">Отметьте «Читаю» под обложкой книги — она появится здесь.</p>`}
+            </aside>
+            <section class="home-main">
+              <h2 class="section-title">Категории</h2>
+              <div class="cat-grid">
+                ${cats.map(([name, books]) => `<a class="cat-tile" href="#/cat/${encodeURIComponent(name)}">
+                    <div class="cat-name">${esc(name)}</div><div class="cat-count">${books.length} ${plural(books.length, 'книга', 'книги', 'книг')}</div>
+                  </a>`).join('')}
+              </div>
+              ${collectionsSection()}
+            </section>
           </div>`}
       </main>
       ${empty ? '' : `<button class="fab" data-import aria-label="Добавить файл с устройства">${ico('plus')}</button>`}
@@ -184,8 +196,7 @@ function renderHome(tab) {
   $$('[data-import]', app).forEach(b => b.onclick = importLocal);
   $$('[data-newcol]', app).forEach(b => b.onclick = () => openCollectionEditor(null));
   fillCovers(app);
-  // обложки для превью категорий
-  queueCovers(cats.flatMap(([, books]) => books.slice(0, 3).map(b => b.id)));
+  queueCovers(favs.map(b => b.id));
 }
 
 function catHash(cat, sub) {
@@ -201,7 +212,7 @@ function subcategoriesOf(cat) {
 
 function bookCardHtml(b) {
   const pct = state.progress[b.id]?.pct;
-  return `<a class="book-card" href="#/read/${encodeURIComponent(b.id)}" data-id="${esc(b.id)}">
+  return `<div class="book-item"><a class="book-card" href="#/read/${encodeURIComponent(b.id)}" data-id="${esc(b.id)}">
     <div class="cover" data-cover="${esc(b.id)}">${fallbackCover(b.title, b.author, b.id)}</div>
     ${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : '<div class="bar empty"></div>'}
     <div class="bk-title" data-title="${esc(b.id)}">${esc(b.title)}</div>
@@ -209,7 +220,7 @@ function bookCardHtml(b) {
     <div class="bk-fmt">${esc(b.format.toUpperCase())}${pct != null ? ` · ${pct}%` : ''}</div>
     ${b.source === 'local' ? `<button class="card-menu" data-del="${esc(b.id)}" aria-label="Удалить">×</button>`
       : `<button class="card-menu" data-move="${esc(b.id)}" aria-label="Переместить">⋯</button>`}
-  </a>`;
+  </a><label class="fav-check"><input type="checkbox" data-fav="${esc(b.id)}" ${isFavorite(b.id) ? 'checked' : ''}><span>Читаю</span></label></div>`;
 }
 
 function renderCategory(name, sub = null) {
@@ -247,6 +258,7 @@ function renderCategory(name, sub = null) {
     save('books', { sync: false }); renderCategory(name, sub);
   });
   $$('[data-move]', app).forEach(b => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openMoveSheet(state.books[b.dataset.move], () => renderCategory(name, sub)); });
+  $$('[data-fav]', app).forEach(c => c.onchange = () => { setFavorite(c.dataset.fav, c.checked); toast(c.checked ? 'Добавлено в «Читаю»' : 'Убрано из «Читаю»'); });
   const ns = $('[data-newsub]', app);
   if (ns) ns.onclick = () => openNewSubSheet(name);
   fillCovers(app);
