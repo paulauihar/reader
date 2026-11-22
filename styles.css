@@ -450,3 +450,6 @@ body { -webkit-font-smoothing: antialiased; letter-spacing: -0.005em; }
 #edmeta .ico { width: 16px; height: 16px; }
 .field textarea { font: inherit; font-size: 15px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); width: 100%; resize: vertical; }
 .bk-title { display: block; -webkit-line-clamp: unset; overflow: visible; overflow-wrap: break-word; }
+
+/* Поля в режиме чтения — вдвое шире (было 22px) */
+.is-flow .r-content { padding-left: 44px; padding-right: 44px; }
