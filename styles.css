@@ -487,3 +487,58 @@ body:not(.reading) { background: #ffffff; }
 .home-search { margin: 2px 0 12px; background: var(--zone-main); border: 0; border-radius: 14px; }
 .home-search input { font-size: 15px; }
 .search-results { margin-top: 4px; }
+
+/* ================= Главный экран v3: каркас из трёх областей ================= */
+:root { --z-top: #f1f1f4; --z-side: #f7f7f9; --z-main: #ffffff; --z-sep: #e6e6eb; --tile2: #f3f3f6; }
+[data-theme="dark"] { --z-top: #17171b; --z-side: #121215; --z-main: #0c0c0e; --z-sep: #26262c; --tile2: #19191d; }
+.home { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--z-main); padding-bottom: calc(58px + var(--sab)); }
+/* Верх: текущая книга */
+.hz-top { display: flex; align-items: center; gap: 12px; padding: calc(12px + var(--sat)) 12px 12px 16px; background: var(--z-top); border-bottom: 1px solid var(--z-sep); }
+.hz-current { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; color: var(--text); }
+.hz-current-empty { color: var(--muted); font-size: 14px; }
+.hz-cover { width: 44px; aspect-ratio: 2/3; border-radius: 5px; overflow: hidden; flex: none; background: var(--line); }
+.hz-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hz-cur-info { min-width: 0; }
+.hz-cur-title { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hz-cur-author { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hz-actions { display: flex; flex: none; }
+@media (min-width: 700px) { .hz-top { padding: calc(16px + var(--sat)) 20px 16px 24px; } .hz-cover { width: 52px; } .hz-cur-title { font-size: 18px; } }
+/* Тело: две колонки на всю высоту */
+.hz-body { flex: 1; display: grid; grid-template-columns: minmax(104px, 32%) 1fr; min-height: 0; }
+@media (min-width: 700px) { .hz-body { grid-template-columns: 280px 1fr; } }
+.hz-side { background: var(--z-side); border-right: 1px solid var(--z-sep); padding: 14px 10px; min-width: 0; }
+.hz-main { background: var(--z-main); padding: 14px 12px 24px; min-width: 0; }
+@media (min-width: 700px) { .hz-side { padding: 20px 16px; } .hz-main { padding: 20px 24px 32px; } }
+/* Левая колонка: список книг без карточек */
+.hz-side .fav-list { gap: 2px; }
+.hz-side .fav-item { padding: 8px 6px; border-radius: 10px; gap: 10px; align-items: flex-start; }
+@media (hover: hover) { .hz-side .fav-item:hover { background: rgba(0,0,0,.04); } }
+.hz-side .fav-item:active { background: rgba(0,0,0,.06); }
+.hz-side .fav-cover { width: 32px; border: 0; border-radius: 4px; }
+.hz-side .fav-title { font-size: 13px; font-weight: 500; line-height: 1.3; color: var(--text); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.hz-side .fav-empty { font-size: 12.5px; color: var(--muted); line-height: 1.45; padding: 4px 6px; margin: 0; }
+@media (max-width: 420px) { .hz-side .fav-cover { display: none; } .hz-side .fav-item { padding: 8px 6px; } }
+/* Правая колонка: поиск, вкладки, список */
+.hz-search { margin: 0 0 14px; background: var(--tile2); border: 0; border-radius: 10px; padding: 0 10px; }
+.hz-search input { padding: 10px 0; font-size: 15px; }
+.hz-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--z-sep); margin-bottom: 12px; }
+.hz-tabs button { border: 0; background: none; padding: 8px 0 10px; font: inherit; font-size: 14px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.hz-tabs button.on { color: var(--text); border-bottom-color: var(--text); font-weight: 600; }
+.hz-main .cat-grid { grid-template-columns: 1fr; gap: 2px; }
+@media (min-width: 700px) { .hz-main .cat-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; } }
+.hz-main .cat-tile { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; background: transparent; border: 0; border-radius: 10px; padding: 11px 8px; min-height: 0; box-shadow: none; }
+@media (min-width: 700px) { .hz-main .cat-tile { background: var(--tile2); padding: 14px 16px; } }
+@media (hover: hover) { .hz-main .cat-tile:hover { background: var(--tile2); border-color: transparent; } }
+.hz-main .cat-tile:active { background: var(--tile2); transform: none; }
+.hz-main .cat-name { font-size: 14.5px; font-weight: 500; }
+.hz-main .cat-count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 699px) { .hz-main .cat-tile:not(.add) + .cat-tile { border-top: 0; } .hz-main .cat-grid > .cat-tile:not(:last-child) { box-shadow: 0 1px 0 var(--z-sep); border-radius: 0; } }
+.hz-main .cat-tile.add { justify-content: flex-start; color: var(--muted); font-weight: 500; border: 0; background: transparent; }
+.hz-main .cat-tile.add .ico { width: 18px; height: 18px; }
+.hz-main .section-head { margin-top: 18px; }
+.hz-main .new-col-hint { border: 1px dashed var(--z-sep); border-radius: 10px; padding: 12px; font-size: 13.5px; }
+.hz-main .search-results .book-grid { padding-top: 4px; }
+.home .bottomnav { border-top: 1px solid var(--z-sep); background: var(--z-main); backdrop-filter: none; }
+.home .fab { bottom: calc(76px + var(--sab)); width: 50px; height: 50px; border-radius: 14px; }
+.home .welcome { flex: 1; }
+.book-card .bk-title { margin-top: 8px; }

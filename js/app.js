@@ -133,7 +133,7 @@ function topBar(title, { backBtn = false, right = '' } = {}) {
 }
 function bottomNav(active) {
   return `<nav class="bottomnav">
-    <a href="#/" class="${active === 'library' ? 'on' : ''}">${ico('book')}<span>Библиотека</span></a>
+    <a href="#/" class="${active === 'library' ? 'on' : ''}">${ico('book')}<span>Книги</span></a>
     <a href="#/tags" class="${active === 'tags' ? 'on' : ''}">${ico('tag')}<span>Теги</span></a>
   </nav>`;
 }
@@ -152,57 +152,67 @@ function renderHome(tab) {
   if (tab === 'tags') return renderTags();
   const cats = categories();
   const last = state.lastOpened && state.books[state.lastOpened];
-  const lastPct = last ? (state.progress[last.id]?.pct ?? 0) : 0;
   const empty = !cats.length;
   const homeTab = state.settings.homeTab === 'folders' ? 'folders' : 'shelves';
   const favs = Object.values(state.books).filter(b => isFavorite(b.id))
     .sort((a, b) => (state.progress[b.id]?.t || 0) - (state.progress[a.id]?.t || 0));
-  app.innerHTML = `
-    <div class="screen">
-      ${topBar('Библиотека', { right: `${syncBtn()}<button class="icon-btn" data-settings aria-label="Настройки">${ico('gear')}</button>` })}
-      <main class="content">
-        ${empty ? '' : `<div class="search home-search"><span>${ico('search')}</span><input type="search" id="bsearch" placeholder="Поиск по названию книги или автору" autocomplete="off" value="${esc(homeQuery)}"></div>
-        <div class="search-results" hidden></div>`}
-        <div class="home-zones">
-        ${last ? `<a class="continue" href="#/read/${encodeURIComponent(last.id)}">
-            <div class="mini-cover" data-cover="${esc(last.id)}">${fallbackCover(last.title, last.author, last.id)}</div>
-            <div class="cont-info"><div class="eyebrow">Продолжить чтение</div><div class="cont-title">${esc(last.title)}</div>
-            <div class="cont-author">${esc(last.author || '')}</div><div class="bar"><i style="width:${lastPct}%"></i></div><div class="cont-pct">${lastPct}%</div></div>
-          </a>` : (empty ? '' : `<div class="continue continue-empty"><div class="cont-info"><div class="eyebrow">Продолжить чтение</div><div class="cont-author">Здесь появится последняя книга, которую вы открыли</div></div></div>`)}
-        ${empty ? `<div class="welcome">
-            <div class="welcome-ico">${ico('book')}</div>
-            <h2>Здесь появятся ваши книги</h2>
-            <p>Подключите папку на Google Диске: каждая подпапка станет категорией. Или добавьте файл с устройства.</p>
-            <button class="btn primary" data-settings>Подключить Google Диск</button>
-            <button class="btn ghost" data-import>Добавить файл с устройства</button>
-          </div>` : `
-          <div class="home-cols">
-            <aside class="home-side">
-              <h2 class="section-title">Читаю</h2>
-              ${favs.length ? `<div class="fav-list">${favs.map(b => {
-                const pct = state.progress[b.id]?.pct ?? 0;
-                return `<a class="fav-item" href="#/read/${encodeURIComponent(b.id)}">
-                  <div class="fav-cover" data-cover="${esc(b.id)}">${fallbackCover(b.title, '', b.id)}</div>
-                  <div class="fav-info"><div class="fav-title">${esc(b.title)}</div><div class="bar"><i style="width:${pct}%"></i></div></div>
-                </a>`;
-              }).join('')}</div>` : `<p class="fav-empty">Отметьте «Читаю» под обложкой книги — она появится здесь.</p>`}
-            </aside>
-            <section class="home-main">
-              <div class="seg home-tabs" role="tablist">
-                <button class="${homeTab === 'shelves' ? 'on' : ''}" data-htab="shelves" role="tab">Полки</button>
-                <button class="${homeTab === 'folders' ? 'on' : ''}" data-htab="folders" role="tab">Папки на Диске</button>
-              </div>
-              ${homeTab === 'shelves' ? shelvesGridHtml(liveShelves()) : `<div class="cat-grid">
-                ${cats.map(([name, books]) => `<a class="cat-tile" href="#/cat/${encodeURIComponent(name)}">
-                    <div class="cat-name">${esc(name)}</div><div class="cat-count">${books.length} ${plural(books.length, 'книга', 'книги', 'книг')}</div>
-                  </a>`).join('')}
-              </div>`}
-              ${collectionsSection()}
-            </section>
-          </div>`}
+  const actions = `<div class="hz-actions">${syncBtn()}<button class="icon-btn" data-settings aria-label="Настройки">${ico('gear')}</button></div>`;
+
+  if (empty) {
+    app.innerHTML = `
+      <div class="home">
+        <header class="hz-top"><div class="hz-current"></div>${actions}</header>
+        <div class="welcome">
+          <div class="welcome-ico">${ico('book')}</div>
+          <h2>Здесь появятся ваши книги</h2>
+          <p>Подключите папку на Google Диске: каждая подпапка станет категорией. Или добавьте файл с устройства.</p>
+          <button class="btn primary" data-settings>Подключить Google Диск</button>
+          <button class="btn ghost" data-import>Добавить файл с устройства</button>
         </div>
-      </main>
-      ${empty ? '' : `<button class="fab" data-import aria-label="Добавить файл с устройства">${ico('plus')}</button>`}
+        ${bottomNav('library')}
+      </div>`;
+    bindCommon(app);
+    $$('[data-import]', app).forEach(b => b.onclick = importLocal);
+    return;
+  }
+
+  const listHtml = homeTab === 'shelves' ? shelvesGridHtml(liveShelves()) : `<div class="cat-grid">
+      ${cats.map(([name, books]) => `<a class="cat-tile" href="#/cat/${encodeURIComponent(name)}">
+          <div class="cat-name">${esc(name)}</div><div class="cat-count">${books.length}</div>
+        </a>`).join('')}
+    </div>`;
+
+  app.innerHTML = `
+    <div class="home">
+      <header class="hz-top">
+        ${last ? `<a class="hz-current" href="#/read/${encodeURIComponent(last.id)}">
+            <div class="hz-cover" data-cover="${esc(last.id)}">${fallbackCover(last.title, last.author, last.id)}</div>
+            <div class="hz-cur-info"><div class="hz-cur-title">${esc(last.title)}</div>${last.author ? `<div class="hz-cur-author">${esc(last.author)}</div>` : ''}</div>
+          </a>` : `<div class="hz-current hz-current-empty">Откройте книгу — она появится здесь</div>`}
+        ${actions}
+      </header>
+      <div class="hz-body">
+        <aside class="hz-side">
+          ${favs.length ? `<nav class="fav-list">${favs.map(b => `<a class="fav-item" href="#/read/${encodeURIComponent(b.id)}">
+              <div class="fav-cover" data-cover="${esc(b.id)}">${fallbackCover(b.title, '', b.id)}</div>
+              <div class="fav-title">${esc(b.title)}</div>
+            </a>`).join('')}</nav>`
+            : `<p class="fav-empty">Отметьте галочку под обложкой — книга появится в этой колонке.</p>`}
+        </aside>
+        <section class="hz-main">
+          <div class="search hz-search"><span>${ico('search')}</span><input type="search" id="bsearch" placeholder="Название или автор" autocomplete="off" value="${esc(homeQuery)}"></div>
+          <div class="search-results" hidden></div>
+          <div class="home-zones">
+            <div class="hz-tabs" role="tablist">
+              <button class="${homeTab === 'shelves' ? 'on' : ''}" data-htab="shelves" role="tab">Полки</button>
+              <button class="${homeTab === 'folders' ? 'on' : ''}" data-htab="folders" role="tab">Папки на Диске</button>
+            </div>
+            ${listHtml}
+            ${collectionsSection()}
+          </div>
+        </section>
+      </div>
+      <button class="fab" data-import aria-label="Добавить файл с устройства">${ico('plus')}</button>
       ${bottomNav('library')}
     </div>`;
   bindCommon(app);
@@ -211,31 +221,29 @@ function renderHome(tab) {
   bindShelfButtons(app, () => renderHome('library'));
   $$('[data-htab]', app).forEach(t => t.onclick = () => { setSetting('homeTab', t.dataset.htab); renderHome('library'); });
   const si = $('#bsearch', app);
-  if (si) {
-    const run = () => {
-      homeQuery = si.value;
-      const norm = (x) => x.toLowerCase().replace(/ё/g, 'е');
-      const q = norm(si.value.trim());
-      const res = $('.search-results', app), zones = $('.home-zones', app);
-      if (!q) { res.hidden = true; zones.hidden = false; return; }
-      const words = q.split(/\s+/);
-      const found = Object.values(state.books).filter(b => {
-        const hay = norm(b.title + ' ' + (b.author || '') + ' ' + (b.fileName || ''));
-        return words.every(w => hay.includes(w));
-      }).sort((a, b) => a.title.localeCompare(b.title, 'ru', { numeric: true })).slice(0, 200);
-      res.innerHTML = `<h2 class="section-title">Найдено: ${found.length}</h2>` + (found.length
-        ? `<div class="book-grid">${found.map(bookCardHtml).join('')}</div>`
-        : `<div class="empty-state">Ничего не найдено. Попробуйте часть названия или фамилию автора.</div>`);
-      res.hidden = false; zones.hidden = true;
-      bindBookCards(res, run);
-      fillCovers(res);
-      queueCovers(found.slice(0, 40).map(b => b.id));
-    };
-    si.addEventListener('input', run);
-    if (homeQuery) run();
-  }
+  const run = () => {
+    homeQuery = si.value;
+    const norm = (x) => x.toLowerCase().replace(/ё/g, 'е');
+    const q = norm(si.value.trim());
+    const res = $('.search-results', app), zones = $('.home-zones', app);
+    if (!q) { res.hidden = true; zones.hidden = false; return; }
+    const words = q.split(/\s+/);
+    const found = Object.values(state.books).filter(b => {
+      const hay = norm(b.title + ' ' + (b.author || '') + ' ' + (b.fileName || ''));
+      return words.every(w => hay.includes(w));
+    }).sort((a, b) => a.title.localeCompare(b.title, 'ru', { numeric: true })).slice(0, 200);
+    res.innerHTML = found.length
+      ? `<div class="book-grid">${found.map(bookCardHtml).join('')}</div>`
+      : `<div class="empty-state">Ничего не найдено</div>`;
+    res.hidden = false; zones.hidden = true;
+    bindBookCards(res, run);
+    fillCovers(res);
+    queueCovers(found.slice(0, 40).map(b => b.id));
+  };
+  si.addEventListener('input', run);
+  if (homeQuery) run();
   fillCovers(app);
-  queueCovers(favs.map(b => b.id));
+  queueCovers(favs.concat(last ? [last] : []).map(b => b.id));
 }
 
 function catHash(cat, sub) {
@@ -253,10 +261,8 @@ function bookCardHtml(b) {
   const pct = state.progress[b.id]?.pct;
   return `<div class="book-item"><a class="book-card" href="#/read/${encodeURIComponent(b.id)}" data-id="${esc(b.id)}">
     <div class="cover" data-cover="${esc(b.id)}">${fallbackCover(b.title, b.author, b.id)}</div>
-    ${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : '<div class="bar empty"></div>'}
     <div class="bk-title" data-title="${esc(b.id)}">${esc(b.title)}</div>
     <div class="bk-author" data-author="${esc(b.id)}">${esc(b.author || '')}</div>
-    <div class="bk-fmt">${esc(b.format.toUpperCase())}${pct != null ? ` · ${pct}%` : ''}</div>
     <button class="card-menu" data-menu="${esc(b.id)}" aria-label="Полки и действия">⋯</button>
     ${shelvesOf(b.id).length ? `<div class="bk-shelves">${shelvesOf(b.id).length} ${plural(shelvesOf(b.id).length, 'полка', 'полки', 'полок')}</div>` : ''}
   </a><label class="fav-check"><input type="checkbox" data-fav="${esc(b.id)}" ${isFavorite(b.id) ? 'checked' : ''}><span>Читаю</span></label></div>`;
@@ -1021,7 +1027,7 @@ function shelvesGridHtml(list, { addLabel = 'Полка', parent = null } = {}) 
   return `<div class="cat-grid">
     ${list.map(sh => `<a class="cat-tile" href="#/shelf/${encodeURIComponent(sh.id)}">
       <div class="cat-name">${esc(sh.name)}</div>
-      <div class="cat-count">${shelfCount(sh.id)} ${plural(shelfCount(sh.id), 'книга', 'книги', 'книг')}${liveShelves(sh.id).length ? ` · ${liveShelves(sh.id).length} ${plural(liveShelves(sh.id).length, 'подполка', 'подполки', 'подполок')}` : ''}</div>
+      <div class="cat-count">${shelfCount(sh.id)}</div>
     </a>`).join('')}
     <button class="cat-tile add" data-newshelf="${esc(parent || '')}">${ico('plus')}<span>${esc(addLabel)}</span></button>
   </div>`;

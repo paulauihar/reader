@@ -1,5 +1,5 @@
 // Сервис-воркер: приложение открывается без интернета.
-const VERSION = 'reader-v10';
+const VERSION = 'reader-v11';
 const CORE = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/db.js', 'js/store.js', 'js/drive.js', 'js/formats.js', 'js/reader.js', 'js/ui.js',
