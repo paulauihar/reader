@@ -153,6 +153,7 @@ function renderHome(tab) {
   const last = state.lastOpened && state.books[state.lastOpened];
   const lastPct = last ? (state.progress[last.id]?.pct ?? 0) : 0;
   const empty = !cats.length;
+  const homeTab = state.settings.homeTab === 'folders' ? 'folders' : 'shelves';
   const favs = Object.values(state.books).filter(b => isFavorite(b.id))
     .sort((a, b) => (state.progress[b.id]?.t || 0) - (state.progress[a.id]?.t || 0));
   app.innerHTML = `
@@ -183,14 +184,15 @@ function renderHome(tab) {
               }).join('')}</div>` : `<p class="fav-empty">Отметьте «Читаю» под обложкой книги — она появится здесь.</p>`}
             </aside>
             <section class="home-main">
-              <h2 class="section-title">Полки</h2>
-              ${shelvesGridHtml(liveShelves())}
-              <h2 class="section-title">Папки на Диске</h2>
-              <div class="cat-grid">
+              <div class="seg home-tabs" role="tablist">
+                <button class="${homeTab === 'shelves' ? 'on' : ''}" data-htab="shelves" role="tab">Полки</button>
+                <button class="${homeTab === 'folders' ? 'on' : ''}" data-htab="folders" role="tab">Папки на Диске</button>
+              </div>
+              ${homeTab === 'shelves' ? shelvesGridHtml(liveShelves()) : `<div class="cat-grid">
                 ${cats.map(([name, books]) => `<a class="cat-tile" href="#/cat/${encodeURIComponent(name)}">
                     <div class="cat-name">${esc(name)}</div><div class="cat-count">${books.length} ${plural(books.length, 'книга', 'книги', 'книг')}</div>
                   </a>`).join('')}
-              </div>
+              </div>`}
               ${collectionsSection()}
             </section>
           </div>`}
@@ -202,6 +204,7 @@ function renderHome(tab) {
   $$('[data-import]', app).forEach(b => b.onclick = importLocal);
   $$('[data-newcol]', app).forEach(b => b.onclick = () => openCollectionEditor(null));
   bindShelfButtons(app, () => renderHome('library'));
+  $$('[data-htab]', app).forEach(t => t.onclick = () => { setSetting('homeTab', t.dataset.htab); renderHome('library'); });
   fillCovers(app);
   queueCovers(favs.map(b => b.id));
 }

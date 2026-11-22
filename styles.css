@@ -453,3 +453,7 @@ body { -webkit-font-smoothing: antialiased; letter-spacing: -0.005em; }
 
 /* Поля в режиме чтения — вдвое шире (было 22px) */
 .is-flow .r-content { padding-left: 44px; padding-right: 44px; }
+.home-tabs { margin: 2px 0 12px; }
+.home-tabs button { flex: 1; border: 0; background: transparent; padding: 8px 6px; border-radius: 9px; font: inherit; font-size: 14px; color: var(--muted); }
+.home-tabs button.on { background: var(--text); color: var(--bg); font-weight: 600; }
+@media (max-width: 699px) { .home-tabs button { font-size: 12.5px; padding: 8px 2px; white-space: nowrap; letter-spacing: -0.01em; } }
