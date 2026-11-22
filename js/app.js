@@ -164,7 +164,7 @@ function renderHome(tab) {
             <div class="mini-cover" data-cover="${esc(last.id)}">${fallbackCover(last.title, last.author, last.id)}</div>
             <div class="cont-info"><div class="eyebrow">Продолжить чтение</div><div class="cont-title">${esc(last.title)}</div>
             <div class="cont-author">${esc(last.author || '')}</div><div class="bar"><i style="width:${lastPct}%"></i></div><div class="cont-pct">${lastPct}%</div></div>
-          </a>` : ''}
+          </a>` : (empty ? '' : `<div class="continue continue-empty"><div class="cont-info"><div class="eyebrow">Продолжить чтение</div><div class="cont-author">Здесь появится последняя книга, которую вы открыли</div></div></div>`)}
         ${empty ? `<div class="welcome">
             <div class="welcome-ico">${ico('book')}</div>
             <h2>Здесь появятся ваши книги</h2>

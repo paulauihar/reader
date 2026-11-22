@@ -457,3 +457,30 @@ body { -webkit-font-smoothing: antialiased; letter-spacing: -0.005em; }
 .home-tabs button { flex: 1; border: 0; background: transparent; padding: 8px 6px; border-radius: 9px; font: inherit; font-size: 14px; color: var(--muted); }
 .home-tabs button.on { background: var(--text); color: var(--bg); font-weight: 600; }
 @media (max-width: 699px) { .home-tabs button { font-size: 12.5px; padding: 8px 2px; white-space: nowrap; letter-spacing: -0.01em; } }
+
+/* ---------- Главный экран: три зоны разной заливки ---------- */
+:root { --zone-top: #ececf0; --zone-side: #e4e4e9; --zone-main: #f3f3f5; --tile: #ffffff; }
+[data-theme="dark"] { --zone-top: #1b1b20; --zone-side: #18181c; --zone-main: #131316; --tile: #202025; }
+body:not(.reading) { background: #ffffff; }
+[data-theme="dark"] body:not(.reading) { background: var(--bg); }
+.screen .topbar { background: color-mix(in srgb, #ffffff 88%, transparent); }
+[data-theme="dark"] .screen .topbar { background: color-mix(in srgb, var(--bg) 88%, transparent); }
+/* Верхняя зона — продолжить чтение */
+.continue { background: var(--zone-top); border: 0; border-radius: 18px; padding: 16px; }
+.continue .mini-cover { border-color: transparent; }
+.continue-empty { min-height: 72px; }
+/* Левая зона — «Читаю» */
+.home-cols { margin-top: 12px; }
+.home-side { background: var(--zone-side); border: 0; border-radius: 18px; padding: 14px 12px; }
+.home-side .section-title { color: #52525b; }
+[data-theme="dark"] .home-side .section-title { color: var(--muted); }
+/* Правая зона — полки / папки */
+.home-main { background: var(--zone-main); border-radius: 18px; padding: 14px 12px; }
+.home-main .cat-tile:not(.add) { background: var(--tile); border-color: transparent; }
+.home-main .cat-tile.add { border-color: #c9c9d1; }
+.home-main .new-col-hint { border-color: #c9c9d1; }
+.home-tabs { background: var(--zone-side); border: 0; }
+.home-tabs button.on { background: var(--tile); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+@media (min-width: 700px) { .home-side, .home-main { padding: 18px; } }
+.continue .bar, .home-side .bar { background: rgba(0,0,0,.09); }
+[data-theme="dark"] .continue .bar, [data-theme="dark"] .home-side .bar { background: rgba(255,255,255,.1); }
