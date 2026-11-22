@@ -1,5 +1,5 @@
 // Главный модуль: экраны, навигация, синхронизация с Google Диском, обложки.
-import { state, load, save, persist, setSetting, subscribe, allTags, itemsWithTag, exportSyncData, mergeSyncData, annotationsOf, liveCollections, putCollection, uid, isFavorite, setFavorite } from './store.js';
+import { state, load, save, persist, setSetting, subscribe, allTags, itemsWithTag, exportSyncData, mergeSyncData, annotationsOf, liveCollections, putCollection, uid, isFavorite, setFavorite, seedShelves, liveShelves, addShelf, renameShelf, deleteShelf, shelvesOf, setBookShelves, booksOnShelf } from './store.js';
 import { db, requestPersistence } from './db.js';
 import * as drive from './drive.js';
 import { openBook, bookInfo, resizeImage } from './formats.js';
@@ -15,6 +15,7 @@ let syncing = false;
 // ---------------- Запуск ----------------
 async function start() {
   await load();
+  seedShelves();
   document.documentElement.dataset.theme = state.settings.theme;
   requestPersistence();
   window.addEventListener('hashchange', () => { navDepth++; route(); });
@@ -45,6 +46,7 @@ async function route() {
   switch (parts[0]) {
     case 'cat': return renderCategory(parts[1], parts[2] || null);
     case 'col': return renderCollection(parts[1]);
+    case 'shelf': return renderShelf(parts[1]);
     case 's': return routeGuest(parts);
     case 'tags': return renderHome('tags');
     case 'tag': return renderTag(parts[1], params.get('f') || 'all');
@@ -179,7 +181,9 @@ function renderHome(tab) {
               }).join('')}</div>` : `<p class="fav-empty">Отметьте «Читаю» под обложкой книги — она появится здесь.</p>`}
             </aside>
             <section class="home-main">
-              <h2 class="section-title">Категории</h2>
+              <h2 class="section-title">Полки</h2>
+              ${shelvesGridHtml(liveShelves())}
+              <h2 class="section-title">Папки на Диске</h2>
               <div class="cat-grid">
                 ${cats.map(([name, books]) => `<a class="cat-tile" href="#/cat/${encodeURIComponent(name)}">
                     <div class="cat-name">${esc(name)}</div><div class="cat-count">${books.length} ${plural(books.length, 'книга', 'книги', 'книг')}</div>
@@ -195,6 +199,7 @@ function renderHome(tab) {
   bindCommon(app);
   $$('[data-import]', app).forEach(b => b.onclick = importLocal);
   $$('[data-newcol]', app).forEach(b => b.onclick = () => openCollectionEditor(null));
+  bindShelfButtons(app, () => renderHome('library'));
   fillCovers(app);
   queueCovers(favs.map(b => b.id));
 }
@@ -218,8 +223,8 @@ function bookCardHtml(b) {
     <div class="bk-title" data-title="${esc(b.id)}">${esc(b.title)}</div>
     <div class="bk-author" data-author="${esc(b.id)}">${esc(b.author || '')}</div>
     <div class="bk-fmt">${esc(b.format.toUpperCase())}${pct != null ? ` · ${pct}%` : ''}</div>
-    ${b.source === 'local' ? `<button class="card-menu" data-del="${esc(b.id)}" aria-label="Удалить">×</button>`
-      : `<button class="card-menu" data-move="${esc(b.id)}" aria-label="Переместить">⋯</button>`}
+    <button class="card-menu" data-menu="${esc(b.id)}" aria-label="Полки и действия">⋯</button>
+    ${shelvesOf(b.id).length ? `<div class="bk-shelves">${shelvesOf(b.id).length} ${plural(shelvesOf(b.id).length, 'полка', 'полки', 'полок')}</div>` : ''}
   </a><label class="fav-check"><input type="checkbox" data-fav="${esc(b.id)}" ${isFavorite(b.id) ? 'checked' : ''}><span>Читаю</span></label></div>`;
 }
 
@@ -249,16 +254,7 @@ function renderCategory(name, sub = null) {
       </main>
     </div>`;
   bindCommon(app, sub ? catHash(name) : '#/');
-  $$('[data-del]', app).forEach(b => b.onclick = async (e) => {
-    e.preventDefault(); e.stopPropagation();
-    const id = b.dataset.del;
-    if (!(await confirmSheet(`Удалить «${state.books[id]?.title}» с устройства? Заметки и комментарии сохранятся.`))) return;
-    delete state.books[id];
-    await db.del('files', id); await db.del('covers', id);
-    save('books', { sync: false }); renderCategory(name, sub);
-  });
-  $$('[data-move]', app).forEach(b => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openMoveSheet(state.books[b.dataset.move], () => renderCategory(name, sub)); });
-  $$('[data-fav]', app).forEach(c => c.onchange = () => { setFavorite(c.dataset.fav, c.checked); toast(c.checked ? 'Добавлено в «Читаю»' : 'Убрано из «Читаю»'); });
+  bindBookCards(app, () => renderCategory(name, sub));
   const ns = $('[data-newsub]', app);
   if (ns) ns.onclick = () => openNewSubSheet(name);
   fillCovers(app);
@@ -977,6 +973,116 @@ async function openGuestReader(g, fileId, annId) {
     onBack: () => back(guestBase(g.token)),
     getBlob: (progress) => drive.publicDownload(b.id, g.key, b.resourceKey, b.size, progress),
   });
+}
+
+// ================= Полки =================
+function shelfCount(id) {
+  return booksOnShelf(id).filter(bid => state.books[bid]).length;
+}
+function shelvesGridHtml(list, { addLabel = 'Полка', parent = null } = {}) {
+  return `<div class="cat-grid">
+    ${list.map(sh => `<a class="cat-tile" href="#/shelf/${encodeURIComponent(sh.id)}">
+      <div class="cat-name">${esc(sh.name)}</div>
+      <div class="cat-count">${shelfCount(sh.id)} ${plural(shelfCount(sh.id), 'книга', 'книги', 'книг')}${liveShelves(sh.id).length ? ` · ${liveShelves(sh.id).length} ${plural(liveShelves(sh.id).length, 'подполка', 'подполки', 'подполок')}` : ''}</div>
+    </a>`).join('')}
+    <button class="cat-tile add" data-newshelf="${esc(parent || '')}">${ico('plus')}<span>${esc(addLabel)}</span></button>
+  </div>`;
+}
+function bindShelfButtons(root, after) {
+  $$('[data-newshelf]', root).forEach(b => b.onclick = () => openShelfNameSheet(null, b.dataset.newshelf || null, after));
+}
+function openShelfNameSheet(shelf, parent, after) {
+  const sh = sheet(`
+    <h3>${shelf ? 'Переименовать полку' : parent ? 'Новая подполка' : 'Новая полка'}</h3>
+    <label class="field"><span>Название</span><input id="shname" value="${esc(shelf?.name || '')}" placeholder="Например: «Нейробиология»"></label>
+    <div class="sheet-actions"><button class="btn ghost" data-close>Отмена</button><button class="btn primary" id="shok">${shelf ? 'Сохранить' : 'Создать'}</button></div>`);
+  const input = $('#shname', sh.el);
+  setTimeout(() => input.focus(), 250);
+  const ok = () => {
+    const nm = input.value.trim();
+    if (!nm) { toast('Введите название'); return; }
+    if (shelf) renameShelf(shelf.id, nm); else addShelf(nm, parent);
+    sh.close();
+    after && after();
+  };
+  $('#shok', sh.el).onclick = ok;
+  input.onkeydown = (e) => { if (e.key === 'Enter') ok(); };
+}
+
+function renderShelf(id) {
+  const shelf = state.shelves[id];
+  if (!shelf || shelf.del) { go('#/'); return; }
+  const parent = shelf.parent && state.shelves[shelf.parent];
+  const subs = liveShelves(id);
+  const books = booksOnShelf(id).map(bid => state.books[bid]).filter(Boolean)
+    .sort((a, b) => a.title.localeCompare(b.title, 'ru', { numeric: true }));
+  app.innerHTML = `
+    <div class="screen">
+      ${topBar(shelf.name, { backBtn: true, right: `<button class="icon-btn" data-shmenu aria-label="Настройки полки">${ico('edit')}</button>` })}
+      <main class="content">
+        ${parent ? `<div class="crumb"><a href="#/shelf/${encodeURIComponent(parent.id)}">${esc(parent.name)}</a> › ${esc(shelf.name)}</div>` : ''}
+        ${!shelf.parent ? `<h2 class="section-title">Подполки</h2>${shelvesGridHtml(subs, { addLabel: 'Подполка', parent: id })}` : ''}
+        <h2 class="section-title">Книги</h2>
+        ${books.length ? `<div class="book-grid">${books.map(bookCardHtml).join('')}</div>`
+          : `<div class="empty-state">На этой полке пока нет книг. Откройте любую категорию и нажмите «⋯» на обложке, чтобы положить книгу на полку.</div>`}
+      </main>
+    </div>`;
+  bindCommon(app, parent ? '#/shelf/' + encodeURIComponent(parent.id) : '#/');
+  bindShelfButtons(app, () => renderShelf(id));
+  bindBookCards(app, () => renderShelf(id));
+  $('[data-shmenu]', app).onclick = () => {
+    const sh = sheet(`<h3>${esc(shelf.name)}</h3>
+      <div class="menu-list">
+        <button class="menu-item" id="ren">${ico('edit')} Переименовать</button>
+        <button class="menu-item danger-text" id="del">Удалить полку</button>
+      </div>`);
+    $('#ren', sh.el).onclick = () => { sh.close(); openShelfNameSheet(shelf, null, () => renderShelf(id)); };
+    $('#del', sh.el).onclick = async () => {
+      sh.close();
+      if (!(await confirmSheet(`Удалить полку «${shelf.name}»${subs.length ? ' вместе с подполками' : ''}? Книги останутся в библиотеке и на Диске.`))) return;
+      deleteShelf(id); toast('Полка удалена'); go(parent ? '#/shelf/' + encodeURIComponent(parent.id) : '#/');
+    };
+  };
+  fillCovers(app);
+  queueCovers(books.map(b => b.id));
+}
+
+// Меню книги: полки (несколько сразу), перенос в папку Диска, удаление файла с устройства
+function bindBookCards(root, rerender) {
+  $$('[data-menu]', root).forEach(b => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openBookMenu(state.books[b.dataset.menu], rerender); });
+  $$('[data-fav]', root).forEach(c => c.onchange = () => { setFavorite(c.dataset.fav, c.checked); toast(c.checked ? 'Добавлено в «Читаю»' : 'Убрано из «Читаю»'); });
+}
+function openBookMenu(b, rerender) {
+  if (!b) return;
+  const selected = new Set(shelvesOf(b.id));
+  const row = (shf, isSub) => `<label class="pick ${isSub ? 'is-sub' : ''}"><input type="checkbox" value="${esc(shf.id)}" ${selected.has(shf.id) ? 'checked' : ''}><span>${esc(shf.name)}</span></label>`;
+  const sh = sheet(`
+    <h3>${esc(b.title)}</h3>
+    <div class="lbl">Полки <b id="shcnt">${selected.size}</b></div>
+    <div class="search"><span>${ico('search')}</span><input type="search" id="shq" placeholder="Найти полку"></div>
+    <div class="pick-list shelf-pick">${liveShelves().map(p => row(p, false) + liveShelves(p.id).map(c => row(c, true)).join('')).join('')}</div>
+    <button class="link-btn" id="shnew">${ico('plus')} Новая полка</button>
+    <div class="sheet-actions">
+      ${b.source === 'drive' ? `<button class="btn ghost" id="mv">${ico('folder')} В другую папку Диска</button>` : ''}
+      ${b.source === 'local' ? `<button class="btn ghost danger-text" id="rm">Удалить с устройства</button>` : ''}
+      <button class="btn primary" id="shsave">Готово</button>
+    </div>`, { cls: 'tall' });
+  const list = $('.shelf-pick', sh.el);
+  list.onchange = (e) => { if (e.target.type === 'checkbox') { e.target.checked ? selected.add(e.target.value) : selected.delete(e.target.value); $('#shcnt', sh.el).textContent = selected.size; } };
+  $('#shq', sh.el).oninput = (e) => { const q = e.target.value.trim().toLowerCase(); $$('.pick', list).forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); }); };
+  const saveSel = () => { setBookShelves(b.id, [...selected]); };
+  $('#shsave', sh.el).onclick = () => { saveSel(); sh.close(); toast(selected.size ? `Полок: ${selected.size}` : 'Книга убрана со всех полок'); rerender && rerender(); };
+  $('#shnew', sh.el).onclick = () => { saveSel(); sh.close(); openShelfNameSheet(null, null, () => openBookMenu(b, rerender)); };
+  const mv = $('#mv', sh.el);
+  if (mv) mv.onclick = () => { saveSel(); sh.close(); openMoveSheet(b, rerender); };
+  const rm = $('#rm', sh.el);
+  if (rm) rm.onclick = async () => {
+    saveSel(); sh.close();
+    if (!(await confirmSheet(`Удалить «${b.title}» с устройства? Заметки и комментарии сохранятся.`))) return;
+    delete state.books[b.id];
+    await db.del('files', b.id); await db.del('covers', b.id);
+    save('books', { sync: false }); rerender && rerender();
+  };
 }
 
 function plural(n, one, few, many) {

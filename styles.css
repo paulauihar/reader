@@ -418,3 +418,22 @@ body { -webkit-font-smoothing: antialiased; letter-spacing: -0.005em; }
 .sheet h3 { font-weight: 700; letter-spacing: -0.01em; }
 .mode:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
 .continue { background: var(--card); }
+
+/* ---------- Полки ---------- */
+.cat-tile.add { flex-direction: row; align-items: center; gap: 8px; border-style: dashed; background: transparent; color: var(--muted); font: inherit; font-weight: 500; cursor: pointer; justify-content: center; min-height: 66px; }
+.bk-shelves { font-size: 11px; color: var(--accent); margin-top: 2px; }
+.shelf-pick { max-height: 46vh; }
+.pick.is-sub { padding-left: 32px; }
+.menu-list { display: flex; flex-direction: column; }
+.menu-item { display: flex; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid var(--line); background: none; padding: 14px 4px; text-align: left; font: inherit; color: var(--text); }
+#shnew { display: inline-flex; align-items: center; gap: 4px; margin-top: 10px; font-weight: 600; }
+#shnew .ico { width: 18px; height: 18px; }
+.card-menu[data-menu] { font-size: 16px; letter-spacing: 1px; background: rgba(0,0,0,.45); }
+/* Компактные полки/папки на телефоне: строка «название — число» */
+@media (max-width: 699px) {
+  .home-main .cat-grid { grid-template-columns: 1fr; gap: 6px; }
+  .home-main .cat-tile:not(.add) { flex-direction: row; align-items: baseline; justify-content: space-between; gap: 8px; padding: 11px 12px; border-radius: 12px; }
+  .home-main .cat-tile .cat-name { font-size: 14px; }
+  .home-main .cat-tile .cat-count { font-size: 12px; white-space: nowrap; }
+  .home-main .cat-tile.add { min-height: 44px; }
+}

@@ -1,5 +1,5 @@
 // Сервис-воркер: приложение открывается без интернета.
-const VERSION = 'reader-v4';
+const VERSION = 'reader-v5';
 const CORE = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/db.js', 'js/store.js', 'js/drive.js', 'js/formats.js', 'js/reader.js', 'js/ui.js',
@@ -22,7 +22,7 @@ self.addEventListener('fetch', (e) => {
   if (url.origin === location.origin || isFont) {
     // своё приложение: сначала сеть (чтобы обновления приходили), при отсутствии сети — кэш
     e.respondWith(
-      fetch(e.request).then(res => {
+      fetch(e.request, url.origin === location.origin ? { cache: 'no-cache' } : undefined).then(res => {
         if (res.ok || res.type === 'opaque') { const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
         return res;
       }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
