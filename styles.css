@@ -484,3 +484,6 @@ body:not(.reading) { background: #ffffff; }
 @media (min-width: 700px) { .home-side, .home-main { padding: 18px; } }
 .continue .bar, .home-side .bar { background: rgba(0,0,0,.09); }
 [data-theme="dark"] .continue .bar, [data-theme="dark"] .home-side .bar { background: rgba(255,255,255,.1); }
+.home-search { margin: 2px 0 12px; background: var(--zone-main); border: 0; border-radius: 14px; }
+.home-search input { font-size: 15px; }
+.search-results { margin-top: 4px; }

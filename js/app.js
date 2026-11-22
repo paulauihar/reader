@@ -147,6 +147,7 @@ function bindCommon(root, backFallback = '#/') {
   root.querySelector('[data-settings]')?.addEventListener('click', () => go('#/settings'));
 }
 
+let homeQuery = '';
 function renderHome(tab) {
   if (tab === 'tags') return renderTags();
   const cats = categories();
@@ -160,6 +161,9 @@ function renderHome(tab) {
     <div class="screen">
       ${topBar('Библиотека', { right: `${syncBtn()}<button class="icon-btn" data-settings aria-label="Настройки">${ico('gear')}</button>` })}
       <main class="content">
+        ${empty ? '' : `<div class="search home-search"><span>${ico('search')}</span><input type="search" id="bsearch" placeholder="Поиск по названию книги или автору" autocomplete="off" value="${esc(homeQuery)}"></div>
+        <div class="search-results" hidden></div>`}
+        <div class="home-zones">
         ${last ? `<a class="continue" href="#/read/${encodeURIComponent(last.id)}">
             <div class="mini-cover" data-cover="${esc(last.id)}">${fallbackCover(last.title, last.author, last.id)}</div>
             <div class="cont-info"><div class="eyebrow">Продолжить чтение</div><div class="cont-title">${esc(last.title)}</div>
@@ -196,6 +200,7 @@ function renderHome(tab) {
               ${collectionsSection()}
             </section>
           </div>`}
+        </div>
       </main>
       ${empty ? '' : `<button class="fab" data-import aria-label="Добавить файл с устройства">${ico('plus')}</button>`}
       ${bottomNav('library')}
@@ -205,6 +210,30 @@ function renderHome(tab) {
   $$('[data-newcol]', app).forEach(b => b.onclick = () => openCollectionEditor(null));
   bindShelfButtons(app, () => renderHome('library'));
   $$('[data-htab]', app).forEach(t => t.onclick = () => { setSetting('homeTab', t.dataset.htab); renderHome('library'); });
+  const si = $('#bsearch', app);
+  if (si) {
+    const run = () => {
+      homeQuery = si.value;
+      const norm = (x) => x.toLowerCase().replace(/ё/g, 'е');
+      const q = norm(si.value.trim());
+      const res = $('.search-results', app), zones = $('.home-zones', app);
+      if (!q) { res.hidden = true; zones.hidden = false; return; }
+      const words = q.split(/\s+/);
+      const found = Object.values(state.books).filter(b => {
+        const hay = norm(b.title + ' ' + (b.author || '') + ' ' + (b.fileName || ''));
+        return words.every(w => hay.includes(w));
+      }).sort((a, b) => a.title.localeCompare(b.title, 'ru', { numeric: true })).slice(0, 200);
+      res.innerHTML = `<h2 class="section-title">Найдено: ${found.length}</h2>` + (found.length
+        ? `<div class="book-grid">${found.map(bookCardHtml).join('')}</div>`
+        : `<div class="empty-state">Ничего не найдено. Попробуйте часть названия или фамилию автора.</div>`);
+      res.hidden = false; zones.hidden = true;
+      bindBookCards(res, run);
+      fillCovers(res);
+      queueCovers(found.slice(0, 40).map(b => b.id));
+    };
+    si.addEventListener('input', run);
+    if (homeQuery) run();
+  }
   fillCovers(app);
   queueCovers(favs.map(b => b.id));
 }
