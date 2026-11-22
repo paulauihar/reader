@@ -7,7 +7,8 @@ export const now = () => Date.now();
 
 export const state = {
   // Библиотека (локальная, пересобирается из Google Диска)
-  books: {},          // id -> {id, title, author, format, category, driveId, modifiedTime, size, source}
+  books: {},          // id -> {id, title, author, format, category, sub, parentId, driveId, modifiedTime, size, source}
+  folders: {},        // id папки -> {id, name, cat, sub} — категории и подкатегории на Диске
   // Синхронизируемые данные
   progress: {},       // bookId -> {pos, pct, t}
   annotations: {},    // id -> {id, bookId, type:'hl'|'cm'|'ink', color, anchor, text, comment, tags, t, del}
@@ -48,7 +49,7 @@ export async function persist() {
   clearTimeout(saveTimer);
   await db.set('kv', 'state', {
     books: state.books, progress: state.progress, annotations: state.annotations,
-    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings, collections: state.collections,
+    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings, collections: state.collections, folders: state.folders,
     dirty: state.dirty, lastSync: state.lastSync,
   });
 }
@@ -58,6 +59,7 @@ export async function load() {
   if (saved) {
     Object.assign(state, saved);
     state.collections = saved.collections || {};
+    state.folders = saved.folders || {};
     state.settings = Object.assign({}, defaultsSettings(), saved.settings || {});
   }
 }

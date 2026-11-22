@@ -104,31 +104,45 @@ export async function listFolders(parentId = 'root') {
 }
 
 // Обойти папку библиотеки. Подпапки первого уровня = категории.
+// Обойти папку библиотеки. Подпапки первого уровня = категории, второго = подкатегории.
 export async function scanLibrary(rootId, onProgress) {
   const books = [];
-  const queue = [{ id: rootId, category: null }];
+  const folders = {};   // id -> {id, name, cat, sub}
+  const queue = [{ id: rootId, category: null, sub: null, depth: 0 }];
   let scanned = 0;
   while (queue.length) {
-    const { id, category } = queue.shift();
+    const { id, category, sub, depth } = queue.shift();
     const items = await listAll(`'${id}' in parents and trashed=false`);
     scanned++;
     onProgress && onProgress(scanned);
     for (const f of items) {
       if (f.mimeType === FOLDER) {
-        queue.push({ id: f.id, category: category || f.name });
+        if (depth === 0) folders[f.id] = { id: f.id, name: f.name, cat: f.name, sub: null };
+        else if (depth === 1) folders[f.id] = { id: f.id, name: f.name, cat: category, sub: f.name };
+        queue.push({ id: f.id, category: category || f.name, sub: depth === 1 ? f.name : sub, depth: depth + 1 });
       } else {
         const format = formatOf(f.name);
         if (!format) continue;
         books.push({
           id: f.id, driveId: f.id, source: 'drive', format,
           fileName: f.name, title: cleanTitle(f.name), author: '',
-          category: category || 'Без категории',
+          category: category || 'Без категории', sub: sub || null, parentId: id,
           size: +f.size || 0, modifiedTime: f.modifiedTime,
         });
       }
     }
   }
-  return books;
+  return { books, folders };
+}
+export async function createFolder(name, parentId) {
+  const res = await api(`${API}/files?fields=id,name&supportsAllDrives=true`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: FOLDER, parents: [parentId] }) });
+  return await res.json();
+}
+// Переместить файл в другую папку на Диске
+export async function moveFile(fileId, toParent, fromParent) {
+  const p = new URLSearchParams({ addParents: toParent, supportsAllDrives: 'true', fields: 'id,parents' });
+  if (fromParent && fromParent !== toParent) p.set('removeParents', fromParent);
+  await api(`${API}/files/${fileId}?${p}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' });
 }
 
 export async function download(fileId, size, onProgress) {

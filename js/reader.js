@@ -35,7 +35,8 @@ export class Reader {
           <button class="icon-btn" data-act="back" aria-label="Назад">${ico('back')}</button>
           <div class="r-title"><div class="t">${esc(this.meta.title)}</div><div class="a">${esc(this.meta.author || '')}</div></div>
           ${this.mode === 'owner' ? '<span class="owner-badge">Заметки автора</span>' : ''}
-          <button class="icon-btn" data-act="panel" aria-label="Заметки и оглавление">${ico('list')}</button>
+          <button class="icon-btn" data-act="toc" aria-label="Оглавление">${ico('toc')}</button>
+          <button class="icon-btn" data-act="panel" aria-label="Заметки и комментарии">${ico(this.mode === 'read' ? 'list' : 'notes')}</button>
           <button class="icon-btn" data-act="display" aria-label="Фон, яркость, шрифт">${ico('aa')}</button>
         </header>
         <div class="r-selbar">
@@ -579,6 +580,7 @@ export class Reader {
       const act = e.target.closest('[data-act]')?.dataset.act;
       if (act === 'back') return this.onBack();
       if (act === 'panel') return this.openPanel();
+      if (act === 'toc') return this.openPanel('toc');
       if (act === 'display') return this.openDisplay();
       if (act === 'sel-comment') { const sel = this.pendingSel(); if (sel) this.openCommentEditor(sel); return; }
       const hl = e.target.closest('.r-selbar [data-hl]');
@@ -909,6 +911,8 @@ function distToPolyline(x, y, pts) {
 export function ico(name) {
   const p = {
     back: '<path d="M15 5l-7 7 7 7"/>',
+    toc: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 5.5h1.5v2M4 11h2l-2 2h2M4 17h2v2H4"/>',
+    notes: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 11h7M9 15h7"/>',
     list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
     aa: '<path d="M3 18l5-12 5 12M5 14h6"/><path d="M14 18l3.5-8 3.5 8M15.2 15.5h4.6"/>',
     marker: '<path d="M14.5 4.5l5 5L10 19H5v-5z"/><path d="M4 21h16" />',

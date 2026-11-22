@@ -333,3 +333,17 @@ body.reading #toast { bottom: auto; top: calc(76px + var(--sat)); }
 .reader.no-tools .r-tools, .reader.no-tools .r-selbar, .reader.no-tools .r-opts { display: none; }
 .view-comment { line-height: 1.55; white-space: pre-wrap; margin: 12px 0 0; }
 .view-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+/* ---------- Подкатегории ---------- */
+.crumb { font-size: 14px; color: var(--muted); margin: 0 4px 6px; }
+.crumb a { color: var(--accent); }
+.sub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 8px; }
+.sub-tile { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow); font: inherit; color: var(--text); text-align: left; min-height: 52px; }
+.sub-tile .ico { color: var(--accent); flex: none; }
+.sub-name { flex: 1; font-weight: 600; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.sub-count { font-size: 13px; color: var(--muted); }
+.sub-tile.add { border-style: dashed; box-shadow: none; background: transparent; color: var(--muted); }
+.card-menu[data-move] { font-size: 16px; letter-spacing: 1px; background: rgba(0,0,0,.45); }
+.folder:disabled { opacity: .5; }
+.folder small { color: var(--muted); }
+.folder.is-sub { padding-left: 22px; }

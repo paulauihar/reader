@@ -43,7 +43,7 @@ async function route() {
   $$('.sheet-wrap').forEach(s => s.remove());
   document.body.classList.toggle('reading', parts[0] === 'read' || (parts[0] === 's' && parts[2] === 'read'));
   switch (parts[0]) {
-    case 'cat': return renderCategory(parts[1]);
+    case 'cat': return renderCategory(parts[1], parts[2] || null);
     case 'col': return renderCollection(parts[1]);
     case 's': return routeGuest(parts);
     case 'tags': return renderHome('tags');
@@ -188,37 +188,129 @@ function renderHome(tab) {
   queueCovers(cats.flatMap(([, books]) => books.slice(0, 3).map(b => b.id)));
 }
 
-function renderCategory(name) {
-  const books = Object.values(state.books).filter(b => b.category === name)
+function catHash(cat, sub) {
+  return '#/cat/' + encodeURIComponent(cat) + (sub ? '/' + encodeURIComponent(sub) : '');
+}
+const catFolder = (cat) => Object.values(state.folders || {}).find(f => f.cat === cat && !f.sub);
+const subFolder = (cat, sub) => Object.values(state.folders || {}).find(f => f.cat === cat && f.sub === sub);
+function subcategoriesOf(cat) {
+  const names = new Set(Object.values(state.folders || {}).filter(f => f.cat === cat && f.sub).map(f => f.sub));
+  for (const b of Object.values(state.books)) if (b.category === cat && b.sub) names.add(b.sub);
+  return [...names].sort((a, b) => a.localeCompare(b, 'ru', { numeric: true }));
+}
+
+function bookCardHtml(b) {
+  const pct = state.progress[b.id]?.pct;
+  return `<a class="book-card" href="#/read/${encodeURIComponent(b.id)}" data-id="${esc(b.id)}">
+    <div class="cover" data-cover="${esc(b.id)}">${fallbackCover(b.title, b.author, b.id)}</div>
+    ${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : '<div class="bar empty"></div>'}
+    <div class="bk-title" data-title="${esc(b.id)}">${esc(b.title)}</div>
+    <div class="bk-author" data-author="${esc(b.id)}">${esc(b.author || '')}</div>
+    <div class="bk-fmt">${esc(b.format.toUpperCase())}${pct != null ? ` · ${pct}%` : ''}</div>
+    ${b.source === 'local' ? `<button class="card-menu" data-del="${esc(b.id)}" aria-label="Удалить">×</button>`
+      : `<button class="card-menu" data-move="${esc(b.id)}" aria-label="Переместить">⋯</button>`}
+  </a>`;
+}
+
+function renderCategory(name, sub = null) {
+  const inCat = Object.values(state.books).filter(b => b.category === name);
+  const books = inCat.filter(b => (b.sub || null) === sub)
     .sort((a, b) => a.title.localeCompare(b.title, 'ru', { numeric: true }));
+  const subs = sub ? [] : subcategoriesOf(name);
+  const canSub = !sub && !!catFolder(name);
+  const title = sub || name;
   app.innerHTML = `
     <div class="screen">
-      ${topBar(name, { backBtn: true, right: syncBtn() })}
+      ${topBar(title, { backBtn: true, right: syncBtn() })}
       <main class="content">
-        ${books.length ? `<div class="book-grid">${books.map(b => {
-          const pct = state.progress[b.id]?.pct;
-          return `<a class="book-card" href="#/read/${encodeURIComponent(b.id)}" data-id="${esc(b.id)}">
-            <div class="cover" data-cover="${esc(b.id)}">${fallbackCover(b.title, b.author, b.id)}</div>
-            ${pct != null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : '<div class="bar empty"></div>'}
-            <div class="bk-title" data-title="${esc(b.id)}">${esc(b.title)}</div>
-            <div class="bk-author" data-author="${esc(b.id)}">${esc(b.author || '')}</div>
-            <div class="bk-fmt">${esc(b.format.toUpperCase())}${pct != null ? ` · ${pct}%` : ''}</div>
-            ${b.source === 'local' ? `<button class="card-menu" data-del="${esc(b.id)}" aria-label="Удалить">×</button>` : ''}
-          </a>`;
-        }).join('')}</div>` : `<div class="empty-state">В этой категории пока нет книг</div>`}
+        ${sub ? `<div class="crumb"><a href="${catHash(name)}">${esc(name)}</a> › ${esc(sub)}</div>` : ''}
+        ${subs.length || canSub ? `<h2 class="section-title">Подкатегории</h2>
+          <div class="sub-grid">
+            ${subs.map(sname => {
+              const n = inCat.filter(b => b.sub === sname).length;
+              return `<a class="sub-tile" href="${catHash(name, sname)}">${ico('folder')}<span class="sub-name">${esc(sname)}</span><span class="sub-count">${n}</span></a>`;
+            }).join('')}
+            ${canSub ? `<button class="sub-tile add" data-newsub>${ico('plus')}<span class="sub-name">Подкатегория</span></button>` : ''}
+          </div>
+          ${books.length ? '<h2 class="section-title">Книги</h2>' : ''}` : ''}
+        ${books.length ? `<div class="book-grid">${books.map(bookCardHtml).join('')}</div>`
+          : `<div class="empty-state">${sub ? 'В этой подкатегории пока нет книг. Перенесите сюда книги кнопкой «⋯» на обложке.' : subs.length ? '' : 'В этой категории пока нет книг'}</div>`}
       </main>
     </div>`;
-  bindCommon(app);
+  bindCommon(app, sub ? catHash(name) : '#/');
   $$('[data-del]', app).forEach(b => b.onclick = async (e) => {
     e.preventDefault(); e.stopPropagation();
     const id = b.dataset.del;
     if (!(await confirmSheet(`Удалить «${state.books[id]?.title}» с устройства? Заметки и комментарии сохранятся.`))) return;
     delete state.books[id];
     await db.del('files', id); await db.del('covers', id);
-    save('books', { sync: false }); renderCategory(name);
+    save('books', { sync: false }); renderCategory(name, sub);
   });
+  $$('[data-move]', app).forEach(b => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openMoveSheet(state.books[b.dataset.move], () => renderCategory(name, sub)); });
+  const ns = $('[data-newsub]', app);
+  if (ns) ns.onclick = () => openNewSubSheet(name);
   fillCovers(app);
   queueCovers(books.map(b => b.id));
+}
+
+function openNewSubSheet(cat) {
+  const sh = sheet(`
+    <h3>Новая подкатегория</h3>
+    <p class="sheet-text">Внутри «${esc(cat)}» появится подкатегория — и такая же папка на вашем Google Диске.</p>
+    <label class="field"><span>Название</span><input id="sname" placeholder="Например: «Конспекты»"></label>
+    <div class="sheet-actions"><button class="btn ghost" data-close>Отмена</button><button class="btn primary" id="screate">Создать</button></div>`);
+  const input = $('#sname', sh.el);
+  setTimeout(() => input.focus(), 250);
+  const create = async () => {
+    const nm = input.value.trim();
+    if (!nm) { toast('Введите название'); return; }
+    if (subcategoriesOf(cat).includes(nm)) { toast('Такая подкатегория уже есть'); return; }
+    const btn = $('#screate', sh.el); btn.disabled = true; btn.textContent = 'Создаю…';
+    try {
+      await ensureSignedIn(true);
+      const parent = catFolder(cat);
+      const f = await drive.createFolder(nm, parent.id);
+      state.folders[f.id] = { id: f.id, name: nm, cat, sub: nm };
+      save('books', { sync: false });
+      sh.close();
+      toast('Подкатегория создана');
+      renderCategory(cat);
+    } catch (e) { toast(e.message, 5000); btn.disabled = false; btn.textContent = 'Создать'; }
+  };
+  $('#screate', sh.el).onclick = create;
+  input.onkeydown = (e) => { if (e.key === 'Enter') create(); };
+}
+
+function openMoveSheet(b, after) {
+  if (!b) return;
+  const dests = [];
+  if (state.settings.rootFolderId) dests.push({ id: state.settings.rootFolderId, cat: 'Без категории', sub: null, label: 'Без категории' });
+  for (const f of Object.values(state.folders || {})) dests.push({ id: f.id, cat: f.cat, sub: f.sub, label: f.sub ? `${f.cat} › ${f.sub}` : f.cat });
+  dests.sort((x, y) => {
+    if (x.cat === b.category && y.cat !== b.category) return -1;
+    if (y.cat === b.category && x.cat !== b.category) return 1;
+    return x.label.localeCompare(y.label, 'ru', { numeric: true });
+  });
+  const here = (d) => d.cat === b.category && (d.sub || null) === (b.sub || null);
+  const sh = sheet(`
+    <h3>Переместить книгу</h3>
+    <p class="sheet-text">«${esc(b.title)}». Книга переместится и в папках вашего Google Диска.</p>
+    <div class="folder-list">${dests.map((d, i) => `<button class="folder ${d.sub ? 'is-sub' : ''}" data-i="${i}" ${here(d) ? 'disabled' : ''}>${ico('folder')} ${esc(d.label)}${here(d) ? ' <small>(сейчас здесь)</small>' : ''}</button>`).join('')}</div>
+    <div class="sheet-actions"><button class="btn ghost" data-close>Отмена</button></div>`, { cls: 'tall' });
+  $('.folder-list', sh.el).onclick = async (e) => {
+    const btn = e.target.closest('[data-i]'); if (!btn || btn.disabled) return;
+    const d = dests[+btn.dataset.i];
+    btn.disabled = true;
+    try {
+      await ensureSignedIn(true);
+      await drive.moveFile(b.id, d.id, b.parentId);
+      b.parentId = d.id; b.category = d.cat; b.sub = d.sub || null;
+      save('books', { sync: false });
+      sh.close();
+      toast(`Перемещено: ${d.label}`);
+      after && after();
+    } catch (err) { toast(err.message, 5000); btn.disabled = false; }
+  };
 }
 
 // ---------------- Теги ----------------
@@ -275,7 +367,7 @@ async function openReader(id, annId) {
   if (!meta) { app.innerHTML = `<div class="screen">${topBar('Книга', { backBtn: true })}<div class="empty-state">Книга не найдена. Попробуйте синхронизировать библиотеку.</div></div>`; bindCommon(app); return; }
   await openReaderWith({
     meta, annId, mode: 'full',
-    onBack: () => back('#/cat/' + encodeURIComponent(meta.category)),
+    onBack: () => back(catHash(meta.category, meta.sub)),
     getBlob: async (progress) => {
       if (meta.source !== 'drive') throw new Error('Файл книги не найден на устройстве');
       if (!drive.hasValidToken()) {
@@ -372,13 +464,14 @@ export async function syncAll({ interactive = false } = {}) {
   if (!state.settings.rootFolderId) { if (interactive) { toast('Выберите папку с книгами'); go('#/settings'); } return; }
   setSyncing(true);
   try {
-    const found = await drive.scanLibrary(state.settings.rootFolderId);
+    const { books: found, folders } = await drive.scanLibrary(state.settings.rootFolderId);
+    state.folders = folders;
     const seen = new Set();
     for (const nb of found) {
       seen.add(nb.id);
       const old = state.books[nb.id];
       if (old && old.modifiedTime === nb.modifiedTime) {
-        old.category = nb.category; old.fileName = nb.fileName;
+        old.category = nb.category; old.sub = nb.sub; old.parentId = nb.parentId; old.fileName = nb.fileName;
         if (!old.coverTried) old.title = old.title || nb.title;
       } else {
         if (old) { await db.del('files', nb.id).catch(() => {}); await db.del('covers', nb.id).catch(() => {}); coverUrls.delete(nb.id); }
@@ -592,7 +685,8 @@ function openCollectionEditor(existing) {
   const c = existing ? JSON.parse(JSON.stringify(existing)) : { id: uid(), name: '', desc: '', mode: 'notes', bookIds: [], perms: {} };
   const selected = new Set(c.bookIds);
   const driveBooks = Object.values(state.books).filter(b => b.source === 'drive');
-  const cats = [...new Set(driveBooks.map(b => b.category))].sort((a, b) => a.localeCompare(b, 'ru'));
+  const groupOf = (b) => b.sub ? `${b.category} / ${b.sub}` : b.category;
+  const cats = [...new Set(driveBooks.map(groupOf))].sort((a, b) => a.localeCompare(b, 'ru'));
   const sh = sheet(`
     <h3>${existing ? 'Подборка' : 'Новая подборка'}</h3>
     <div class="col-editor">
@@ -602,7 +696,7 @@ function openCollectionEditor(existing) {
       <div class="modes">${Object.entries(MODES).map(([k, m]) => `<label class="mode"><input type="radio" name="mode" value="${k}" ${c.mode === k ? 'checked' : ''}><span><b>${m.label}</b><small>${m.desc}</small></span></label>`).join('')}</div>
       <div class="lbl">Книги <b id="cnt">${selected.size}</b></div>
       ${driveBooks.length ? `<div class="search"><span>${ico('search')}</span><input type="search" id="bq" placeholder="Найти книгу"></div>
-      <div class="pick-list">${cats.map(cat => `<div class="pick-cat">${esc(cat)}</div>${driveBooks.filter(b => b.category === cat).sort((a, b) => a.title.localeCompare(b.title, 'ru')).map(b => `
+      <div class="pick-list">${cats.map(cat => `<div class="pick-cat">${esc(cat)}</div>${driveBooks.filter(b => groupOf(b) === cat).sort((a, b) => a.title.localeCompare(b.title, 'ru')).map(b => `
         <label class="pick" data-q="${esc((b.title + ' ' + (b.author || '')).toLowerCase())}"><input type="checkbox" value="${esc(b.id)}" ${selected.has(b.id) ? 'checked' : ''}><span>${esc(b.title)}${b.author ? `<small>${esc(b.author)}</small>` : ''}</span></label>`).join('')}`).join('')}</div>`
         : '<p class="muted">В подборку можно добавить только книги с Google Диска. Сначала подключите Диск в настройках.</p>'}
       <p class="muted">Книги из подборки и сама подборка станут доступны всем, у кого есть ссылка (только просмотр). Остальные файлы на Диске останутся закрытыми.</p>
