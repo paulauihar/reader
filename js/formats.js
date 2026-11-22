@@ -150,7 +150,7 @@ function wrapStray(el) {
   flush();
 }
 
-async function resizeImage(blob, maxW = 320) {
+export async function resizeImage(blob, maxW = 320) {
   try {
     const bmp = await createImageBitmap(blob);
     const scale = Math.min(1, maxW / bmp.width);

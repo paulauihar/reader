@@ -12,6 +12,7 @@ export const state = {
   progress: {},       // bookId -> {pos, pct, t}
   annotations: {},    // id -> {id, bookId, type:'hl'|'cm'|'ink', color, anchor, text, comment, tags, t, del}
   bookTitles: {},     // bookId -> title (чтобы теги показывали название, даже если книги нет на устройстве)
+  collections: {},    // id -> {id, name, desc, mode, bookIds, manifestId, perms, t, del, pubHash}
   lastOpened: null,   // bookId
   // Локальные настройки
   settings: {
@@ -23,6 +24,7 @@ export const state = {
     penColor: '#e5484d',
     penWidth: 3,
     clientId: '',
+    apiKey: '',
     rootFolderId: '',
     rootFolderName: '',
     autoCovers: true,
@@ -46,7 +48,7 @@ export async function persist() {
   clearTimeout(saveTimer);
   await db.set('kv', 'state', {
     books: state.books, progress: state.progress, annotations: state.annotations,
-    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings,
+    bookTitles: state.bookTitles, lastOpened: state.lastOpened, settings: state.settings, collections: state.collections,
     dirty: state.dirty, lastSync: state.lastSync,
   });
 }
@@ -55,11 +57,12 @@ export async function load() {
   const saved = await db.get('kv', 'state');
   if (saved) {
     Object.assign(state, saved);
+    state.collections = saved.collections || {};
     state.settings = Object.assign({}, defaultsSettings(), saved.settings || {});
   }
 }
 function defaultsSettings() {
-  return { theme: 'light', brightness: 100, fontSize: 19, pdfZoom: 1, hlColor: 'yellow', penColor: '#e5484d', penWidth: 3, clientId: '', rootFolderId: '', rootFolderName: '', autoCovers: true };
+  return { theme: 'light', brightness: 100, fontSize: 19, pdfZoom: 1, hlColor: 'yellow', penColor: '#e5484d', penWidth: 3, clientId: '', apiKey: '', rootFolderId: '', rootFolderName: '', autoCovers: true };
 }
 
 export function setSetting(key, val) {
@@ -92,18 +95,30 @@ export function annotationsOf(bookId, type) {
   return Object.values(state.annotations)
     .filter(a => !a.del && a.bookId === bookId && (!type || a.type === type));
 }
-export function allTags() {
+// Гостевые книги (открытые по чужой ссылке) имеют id вида «g:…» и в общих тегах владельца не показываются
+const ownFilter = a => !String(a.bookId).startsWith('g:');
+export function allTags(filter = ownFilter) {
   const map = new Map();
   for (const a of Object.values(state.annotations)) {
-    if (a.del || !a.tags) continue;
+    if (a.del || !a.tags || !filter(a)) continue;
     for (const t of a.tags) map.set(t, (map.get(t) || 0) + 1);
   }
   return [...map.entries()].sort((x, y) => x[0].localeCompare(y[0], 'ru'));
 }
-export function itemsWithTag(tag) {
+export function itemsWithTag(tag, filter = ownFilter) {
   return Object.values(state.annotations)
-    .filter(a => !a.del && a.tags && a.tags.includes(tag))
+    .filter(a => !a.del && a.tags && a.tags.includes(tag) && filter(a))
     .sort((x, y) => (y.created || y.t) - (x.created || x.t));
+}
+
+// ---------- Подборки ----------
+export function liveCollections() {
+  return Object.values(state.collections || {}).filter(c => !c.del).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+}
+export function putCollection(c) {
+  c.t = now();
+  state.collections[c.id] = c;
+  save('collections');
 }
 
 // ---------- Прогресс ----------
@@ -121,6 +136,7 @@ export function exportSyncData() {
     annotations: state.annotations,
     bookTitles: state.bookTitles,
     lastOpened: state.lastOpened,
+    collections: state.collections,
   };
 }
 export function mergeSyncData(remote) {
@@ -136,6 +152,10 @@ export function mergeSyncData(remote) {
   }
   for (const [k, v] of Object.entries(remote.bookTitles || {})) {
     if (!state.bookTitles[k]) { state.bookTitles[k] = v; changed = true; }
+  }
+  for (const [k, v] of Object.entries(remote.collections || {})) {
+    const l = state.collections[k];
+    if (!l || (v.t || 0) > (l.t || 0)) { state.collections[k] = v; changed = true; }
   }
   if (remote.lastOpened && !state.lastOpened) state.lastOpened = remote.lastOpened;
   if (changed) emit('data');

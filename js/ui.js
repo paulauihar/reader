@@ -61,7 +61,7 @@ export function tagEditor(container, initial = [], onChange) {
   const render = () => {
     chips.innerHTML = tags.map(t => `<span class="chip">#${esc(t)}<button type="button" data-t="${esc(t)}" aria-label="Убрать тег">×</button></span>`).join('');
     const q = input.value.trim().toLowerCase().replace(/^#/, '');
-    const list = allTags().map(([t]) => t).filter(t => !tags.includes(t) && (!q || t.toLowerCase().includes(q))).slice(0, 12);
+    const list = allTags(() => true).map(([t]) => t).filter(t => !tags.includes(t) && (!q || t.toLowerCase().includes(q))).slice(0, 12);
     sug.innerHTML = list.map(t => `<button type="button" class="chip ghost" data-s="${esc(t)}">#${esc(t)}</button>`).join('');
   };
   const add = (raw) => {

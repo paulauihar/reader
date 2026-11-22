@@ -7,8 +7,11 @@ const THEMES = { light: 'Белый', sepia: 'Сепия', gray: 'Серый', d
 const SVGNS = 'http://www.w3.org/2000/svg';
 
 export class Reader {
-  constructor(host, book, meta, { onBack }) {
+  // mode: 'full' — все инструменты; 'read' — только чтение; 'owner' — только просмотр чужих заметок (ownerAnns)
+  constructor(host, book, meta, { onBack, mode = 'full', ownerAnns = null }) {
     this.host = host; this.book = book; this.meta = meta; this.onBack = onBack;
+    this.mode = mode; this.ownerAnns = ownerAnns;
+    this.canAnnotate = mode === 'full';
     this.bookId = meta.id;
     this.tool = null;          // null | 'marker' | 'pen' | 'comment'
     this.eraser = false;
@@ -24,13 +27,14 @@ export class Reader {
   async mount() {
     const s = state.settings;
     this.host.innerHTML = `
-      <div class="reader theme-${s.theme} ${this.book.kind === 'pdf' ? 'is-pdf' : 'is-flow'}" style="--fs:${s.fontSize}px">
+      <div class="reader theme-${s.theme} ${this.book.kind === 'pdf' ? 'is-pdf' : 'is-flow'} ${this.canAnnotate ? '' : 'no-tools'}" style="--fs:${s.fontSize}px">
         <div class="r-scroll"><div class="r-content"></div></div>
         <div class="r-ink-overlay"><svg class="live-ink"></svg></div>
         <div class="r-dim" style="opacity:${(100 - s.brightness) / 100 * 0.75}"></div>
         <header class="r-top">
           <button class="icon-btn" data-act="back" aria-label="Назад">${ico('back')}</button>
           <div class="r-title"><div class="t">${esc(this.meta.title)}</div><div class="a">${esc(this.meta.author || '')}</div></div>
+          ${this.mode === 'owner' ? '<span class="owner-badge">Заметки автора</span>' : ''}
           <button class="icon-btn" data-act="panel" aria-label="Заметки и оглавление">${ico('list')}</button>
           <button class="icon-btn" data-act="display" aria-label="Фон, яркость, шрифт">${ico('aa')}</button>
         </header>
@@ -280,6 +284,13 @@ export class Reader {
     this.scroll.scrollTo({ top, behavior: 'auto' });
   }
 
+  annList(type) {
+    if (this.ownerAnns) return this.ownerAnns.filter(a => !a.del && (!type || a.type === type));
+    if (this.mode === 'read') return [];
+    return annotationsOf(this.bookId, type);
+  }
+  findAnn(id) { return this.ownerAnns ? this.ownerAnns.find(a => a.id === id) : state.annotations[id]; }
+
   // ---------------- Выделения (маркер и комментарии) ----------------
   refreshAnnotations() {
     // снимаем все пометки и рисуем заново
@@ -289,7 +300,7 @@ export class Reader {
       parent && parent.normalize();
     }
     $$('svg.ink', this.content).forEach(s => s.remove());
-    this.marks = annotationsOf(this.bookId).filter(a => a.type === 'hl' || a.type === 'cm')
+    this.marks = this.annList().filter(a => a.type === 'hl' || a.type === 'cm')
       .sort((a, b) => (a.type === 'cm') - (b.type === 'cm'));
     for (const a of this.marks) this.applyMark(a);
     this.renderInkAll();
@@ -436,10 +447,19 @@ export class Reader {
     $('#del', s.el).onclick = () => { s.close(); deleteAnnotation(a.id); this.removeMark(a.id); toast('Заметка удалена'); };
   }
 
+  openViewSheet(a) {
+    sheet(`
+      <h3>${a.type === 'cm' ? 'Комментарий автора' : 'Заметка автора'}</h3>
+      <blockquote class="quote ${a.type === 'hl' ? 'hl-q hl-' + (a.color || 'yellow') : ''}">${esc(excerpt(a.text, 400))}</blockquote>
+      ${a.comment ? `<p class="view-comment">${esc(a.comment)}</p>` : ''}
+      ${(a.tags || []).length ? `<div class="chips view-tags">${a.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}</div>` : ''}
+      <div class="sheet-actions"><button class="btn primary" data-close>Закрыть</button></div>`);
+  }
+
   // ---------------- Перо ----------------
   renderInkAll() {
     $$('svg.ink', this.content).forEach(s => s.remove());
-    for (const a of annotationsOf(this.bookId, 'ink')) this.renderInk(a);
+    for (const a of this.annList('ink')) this.renderInk(a);
   }
   inkSvg(block) {
     let svg = block.querySelector(':scope > svg.ink');
@@ -593,8 +613,11 @@ export class Reader {
       if (mark) {
         // если пометок несколько (вложены) — комментарий важнее
         const cm = e.target.closest('mark.cm');
-        const a = state.annotations[(cm || mark).dataset.a];
-        if (a && !a.del) { a.type === 'cm' ? this.openCommentEditor(null, a) : this.openHighlightSheet(a); return; }
+        const a = this.findAnn((cm || mark).dataset.a);
+        if (a && !a.del) {
+          if (!this.canAnnotate) { this.openViewSheet(a); return; }
+          a.type === 'cm' ? this.openCommentEditor(null, a) : this.openHighlightSheet(a); return;
+        }
       }
       if (!this.tool) this.showChrome(!this.root.classList.contains('chrome'));
     });
@@ -632,6 +655,7 @@ export class Reader {
     return this.lastSel || null;
   }
   onSelectionChange() {
+    if (!this.canAnnotate) return;
     const sel = window.getSelection();
     if (sel && sel.rangeCount && !sel.isCollapsed && this.content.contains(sel.anchorNode)) {
       const a = this.selectionAnchor(sel.getRangeAt(0));
@@ -750,11 +774,10 @@ export class Reader {
     $('#fsp', sh.el).onclick = () => apply(+fs.value + (isPdf ? 0.1 : 1));
   }
 
-  openPanel(tab = 'notes') {
+  openPanel(tab = this.mode === 'read' ? 'toc' : 'notes') {
     const sh = sheet(`
       <div class="tabs" role="tablist">
-        <button data-tab="notes">Заметки</button>
-        <button data-tab="comments">Комментарии</button>
+        ${this.mode === 'read' ? '' : '<button data-tab="notes">Заметки</button><button data-tab="comments">Комментарии</button>'}
         <button data-tab="toc">Оглавление</button>
       </div>
       <div class="panel-body"></div>`, { cls: 'tall' });
@@ -769,8 +792,8 @@ export class Reader {
         return;
       }
       const type = t === 'notes' ? 'hl' : 'cm';
-      const items = annotationsOf(this.bookId, type).sort((a, b) => this.cmpAnchor(a, b));
-      body.innerHTML = items.length ? items.map(a => annCard(a)).join('')
+      const items = this.annList(type).sort((a, b) => this.cmpAnchor(a, b));
+      body.innerHTML = items.length ? items.map(a => annCard(a, null, { editable: this.canAnnotate })).join('')
         : `<div class="empty-state">${t === 'notes' ? 'Здесь появится всё, что вы выделите маркером' : 'Здесь появятся ваши комментарии'}</div>`;
     };
     $('.tabs', sh.el).onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) render(b.dataset.tab); };
@@ -789,7 +812,7 @@ export class Reader {
       }
       const card = e.target.closest('.ann-card');
       if (!card) return;
-      const a = state.annotations[card.dataset.id];
+      const a = this.findAnn(card.dataset.id);
       if (e.target.closest('[data-edit]')) { sh.close(); a.type === 'cm' ? this.openCommentEditor(null, a) : this.openHighlightSheet(a); return; }
       sh.close();
       this.goToAnnotation(a);
@@ -803,20 +826,20 @@ export class Reader {
 }
 
 // ---------------- Помощники ----------------
-export function annCard(a, bookTitle) {
+export function annCard(a, bookTitle, { editable = true } = {}) {
   const tags = (a.tags || []).map(t => `<span class="chip sm">#${esc(t)}</span>`).join('');
   if (a.type === 'cm') {
     return `<div class="ann-card cm-card" data-id="${a.id}" data-book="${esc(a.bookId)}">
       ${bookTitle ? `<div class="ann-book">${esc(bookTitle)}</div>` : ''}
       <div class="ann-quote">«${esc(excerpt(a.text, 180))}»</div>
       <div class="ann-comment">${esc(a.comment)}</div>
-      <div class="ann-meta">${tags}<span class="date">${fmtDate(a.created || a.t)}</span>${bookTitle ? '' : '<button class="link-btn" data-edit>Изменить</button>'}</div>
+      <div class="ann-meta">${tags}<span class="date">${fmtDate(a.created || a.t)}</span>${bookTitle || !editable ? '' : '<button class="link-btn" data-edit>Изменить</button>'}</div>
     </div>`;
   }
   return `<div class="ann-card hl-card" data-id="${a.id}" data-book="${esc(a.bookId)}">
     ${bookTitle ? `<div class="ann-book">${esc(bookTitle)}</div>` : ''}
     <div class="ann-text"><span class="hl-bg hl-${a.color || 'yellow'}">${esc(excerpt(a.text, 300))}</span></div>
-    <div class="ann-meta">${tags}<span class="date">${fmtDate(a.created || a.t)}</span>${bookTitle ? '' : '<button class="link-btn" data-edit>Теги</button>'}</div>
+    <div class="ann-meta">${tags}<span class="date">${fmtDate(a.created || a.t)}</span>${bookTitle || !editable ? '' : '<button class="link-btn" data-edit>Теги</button>'}</div>
   </div>`;
 }
 
@@ -902,6 +925,10 @@ export function ico(name) {
     plus: '<path d="M12 5v14M5 12h14"/>',
     folder: '<path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+    share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+    stack: '<rect x="4" y="4" width="7" height="16" rx="1"/><rect x="13" y="4" width="7" height="16" rx="1"/>',
+    copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3"/>',
   }[name] || '';
   return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 }

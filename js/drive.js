@@ -1,7 +1,8 @@
 // Работа с Google Диском: вход, список книг, скачивание, хранение заметок в скрытой папке приложения.
 import { state } from './store.js';
 
-const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.appdata';
+// Полный доступ к Диску нужен, чтобы открывать книги по ссылке для подборок. Сами книги приложение не меняет.
+const SCOPES = 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.appdata';
 const API = 'https://www.googleapis.com/drive/v3';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const FOLDER = 'application/vnd.google-apps.folder';
@@ -49,6 +50,9 @@ export async function signIn({ prompt = '' } = {}) {
       scope: SCOPES,
       callback: (resp) => {
         if (resp.error) return reject(new Error(resp.error_description || resp.error));
+        if (!google.accounts.oauth2.hasGrantedAllScopes(resp, ...SCOPES.split(' '))) {
+          return reject(new Error('Google не выдал все разрешения. Войдите снова и отметьте все галочки.'));
+        }
         token = { access: resp.access_token, exp: Date.now() + (resp.expires_in || 3600) * 1000 };
         try { localStorage.setItem('gtoken', JSON.stringify(token)); localStorage.setItem('gconnected', '1'); } catch (e) {}
         resolve(token);
@@ -170,4 +174,72 @@ export async function writeSyncData(data) {
     const res = await api(`${UPLOAD}/files?uploadType=multipart&fields=id`, { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart });
     syncFileId = (await res.json()).id;
   }
+}
+
+// ---------- Подборки: публичный доступ по ссылке ----------
+export async function ensureFolder(name) {
+  const q = `name='${name.replace(/'/g, "\\'")}' and mimeType='${FOLDER}' and 'root' in parents and trashed=false`;
+  const found = await listAll(q, 'id,name');
+  if (found[0]) return found[0].id;
+  const res = await api(`${API}/files?fields=id`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, mimeType: FOLDER, parents: ['root'] }) });
+  return (await res.json()).id;
+}
+export async function writeJsonFile(fileId, name, parentId, data) {
+  const body = JSON.stringify(data);
+  if (fileId) {
+    try {
+      await api(`${UPLOAD}/files/${fileId}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
+      return fileId;
+    } catch (e) { if (!/ 404/.test(e.message)) throw e; }
+  }
+  const boundary = 'b' + Math.random().toString(36).slice(2);
+  const meta = { name, parents: [parentId], mimeType: 'application/json' };
+  const multipart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+  const res = await api(`${UPLOAD}/files?uploadType=multipart&fields=id`, { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body: multipart });
+  return (await res.json()).id;
+}
+// Открыть файл «всем, у кого есть ссылка» (только просмотр). Возвращает id разрешения или null, если доступ уже был.
+export async function shareAnyone(fileId) {
+  const perms = await (await api(`${API}/files/${fileId}/permissions?fields=permissions(id,type,role)&supportsAllDrives=true`)).json();
+  if ((perms.permissions || []).some(p => p.type === 'anyone')) return null;
+  const res = await api(`${API}/files/${fileId}/permissions?fields=id&supportsAllDrives=true`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'anyone', role: 'reader', allowFileDiscovery: false }),
+  });
+  return (await res.json()).id;
+}
+export async function revokePermission(fileId, permId) {
+  try { await api(`${API}/files/${fileId}/permissions/${permId}?supportsAllDrives=true`, { method: 'DELETE' }); } catch (e) { console.warn(e); }
+}
+export async function resourceKeyOf(fileId) {
+  const r = await (await api(`${API}/files/${fileId}?fields=resourceKey&supportsAllDrives=true`)).json();
+  return r.resourceKey || '';
+}
+export async function trashFile(fileId) {
+  try { await api(`${API}/files/${fileId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) }); } catch (e) { console.warn(e); }
+}
+
+// Гость: чтение открытых по ссылке файлов с помощью API-ключа, без входа
+async function publicFetch(fileId, key, resourceKey) {
+  const headers = resourceKey ? { 'X-Goog-Drive-Resource-Keys': `${fileId}/${resourceKey}` } : {};
+  const res = await fetch(`${API}/files/${fileId}?alt=media&supportsAllDrives=true&key=${encodeURIComponent(key)}`, { headers });
+  if (res.status === 403 || res.status === 404) throw new Error('Доступ к подборке закрыт или ссылка устарела');
+  if (!res.ok) throw new Error('Google Диск: ошибка ' + res.status);
+  return res;
+}
+export async function publicJson(fileId, key) {
+  return await (await publicFetch(fileId, key)).json();
+}
+export async function publicDownload(fileId, key, resourceKey, size, onProgress) {
+  const res = await publicFetch(fileId, key, resourceKey);
+  if (!res.body || !onProgress) return await res.blob();
+  const total = size || +res.headers.get('content-length') || 0;
+  const reader = res.body.getReader();
+  const chunks = []; let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length;
+    if (total) onProgress(Math.min(1, got / total));
+  }
+  return new Blob(chunks);
 }
